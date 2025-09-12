@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block title %}Admin Dashboard{% endblock %}
+{% block content %}
+<div class="row">
+  <div class="col-md-8">
+    <div class="bg-white p-3 rounded shadow-sm mb-3 d-flex justify-content-between align-items-center">
+      <div>
+        <h5>Stats</h5>
+        <div>Approved users: {{ approved }}</div>
+        <div>Pending users: {{ pended }}</div>
+        <div>Teachers: {{ teachers }}</div>
+        <div>Students: {{ students }}</div>
+      </div>
+      <div>
+        <a class="btn btn-primary" href="{% url 'admin:quizzes_quiz_add' %}">Add Quiz</a>
+        <a class="btn btn-secondary" href="{% url 'admin:users_user_add' %}">Create User</a>
+      </div>
+    </div>
+
+    <div class="bg-white p-3 rounded shadow-sm mb-3">
+      <h4>Leaderboard</h4>
+      <ol>
+        {% for row in leaderboard %}
+          <li>{{ row.student__username }} — {{ row.avg_score|floatformat:2 }}</li>
+        {% endfor %}
+      </ol>
+    </div>
+
+    <div class="bg-white p-3 rounded shadow-sm">
+      <h4>Recent Actions</h4>
+      {% for a in actions %}
+        <div class="border p-2 mb-2">
+          <div><strong>{{ a.user }}</strong> — {{ a.action }}</div>
+          <div class="small text-muted">{{ a.timestamp|date:"SHORT_DATETIME_FORMAT" }}</div>
+          {% if a.details %}
+            <div class="small text-muted">Details: {{ a.details }}</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="bg-white p-3 rounded shadow-sm">
+      <h5>Notifications</h5>
+      {% for n in notifications %}
+        <div class="mb-2">
+          <strong>{{ n.title }}</strong>
+          <div class="small text-muted">{{ n.created_at|date:"SHORT_DATETIME_FORMAT" }}</div>
+          <div>{{ n.message|truncatechars:120 }}</div>
+        </div>
+      {% endfor %}
+      <hr>
+      <h6>Broadcast</h6>
+      <form method="post" action="{% url 'broadcast' %}">
+        {% csrf_token %}
+        <div class="mb-2">
+          <input name="title" class="form-control" placeholder="Title" required>
+        </div>
+        <div class="mb-2">
+          <select name="target_role" class="form-control">
+            <option value="all">All</option>
+            <option value="teachers">Teachers</option>
+            <option value="students">Students</option>
+            <option value="admins">Admins</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <textarea name="message" class="form-control" placeholder="Message" rows="3" required></textarea>
+        </div>
+        <button class="btn btn-primary w-100">Broadcast</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
