@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import SchoolClass, Subject, Quiz, Question, Choice, StudentQuizAttempt, Answer
+from .models import Class, Subject, Quiz, Question, Choice, StudentQuizAttempt, Answer
 
 
 class ChoiceInline(admin.TabularInline):
@@ -9,19 +9,19 @@ class ChoiceInline(admin.TabularInline):
 
 class QuestionAdmin(admin.ModelAdmin):
     inlines = [ChoiceInline]
-    list_display = ('text', 'quiz', 'type', 'marks')
+    list_display = ('text', 'quiz', 'question_type', 'marks')
 
 
 class QuizAdmin(admin.ModelAdmin):
-    list_display = ('title', 'subject', 'start_time', 'end_time', 'published')
-    list_filter = ('subject', 'published')
+    list_display = ('title', 'subject', 'is_published')
+    list_filter = ('subject', 'is_published')
 
 
 class AnswerAdmin(admin.ModelAdmin):
     list_display = ('attempt', 'question', 'obtained_marks', 'is_pending')
 
 
-admin.site.register(SchoolClass)
+admin.site.register(Class)
 admin.site.register(Subject)
 admin.site.register(Quiz, QuizAdmin)
 admin.site.register(Question, QuestionAdmin)

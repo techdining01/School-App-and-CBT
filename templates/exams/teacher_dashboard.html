@@ -1,79 +1,96 @@
-{% extends 'base.html' %}
-{% block title %}Teacher Dashboard{% endblock %}
+{% extends "base.html" %}
+{% load static %}
+
 {% block content %}
-<div class="row">
-  <div class="col-md-8">
-    <div class="bg-white p-3 rounded shadow-sm mb-3">
-      <h4>Class Performance</h4>
-      <canvas id="performanceChart" width="400" height="150"></canvas>
+<div class="container mt-4">
+    <h2 class="mb-3">👨‍🏫 Teacher Dashboard</h2>
+
+    <!-- Notifications -->
+    <div class="mb-4">
+        <h5>Notifications 
+            <span class="badge bg-danger">{{ unread_notifications_count }}</span>
+        </h5>
+        <ul class="list-group">
+            {% for note in notifications %}
+                <li class="list-group-item {% if not note.is_read %}fw-bold{% endif %}">
+                    {{ note.message }}
+                    <small class="text-muted float-end">{{ note.created_at|date:"M d, Y H:i" }}</small>
+                </li>
+            {% empty %}
+                <li class="list-group-item">No notifications</li>
+            {% endfor %}
+        </ul>
     </div>
 
-    <div class="bg-white p-3 rounded shadow-sm">
-      <h4>Subjectives to Grade</h4>
-      {% for ans in pending_subjectives %}
-        <div class="border p-2 mb-2">
-          <div><strong>{{ ans.attempt.student.username }}</strong> — Q: {{ ans.question.text|truncatechars:60 }}</div>
-          <div class="mt-2">{{ ans.text_answer|default:"(file/blank)" }}</div>
-          <div class="mt-2">
-            <a href="{% url 'grade_answer' ans.id %}" class="btn btn-sm btn-primary">Grade</a>
-          </div>
+    <!-- Performance Chart -->
+    <div class="card mb-4">
+        <div class="card-header">📊 Class Performance</div>
+        <div class="card-body">
+            <canvas id="performanceChart"></canvas>
         </div>
-      {% empty %}
-        <p class="text-muted">No pending subjectives.</p>
-      {% endfor %}
     </div>
-  </div>
 
-  <div class="col-md-4">
-    <div class="bg-white p-3 rounded shadow-sm mb-3">
-      <h5>Notifications</h5>
-      {% for n in notifications %}
-        <div class="mb-2">
-          <strong>{{ n.title }}</strong>
-          <div class="small text-muted">{{ n.created_at|date:"SHORT_DATETIME_FORMAT" }}</div>
-          <div>{{ n.message|truncatechars:120 }}</div>
+    <!-- Subjectives to Grade -->
+    <div class="card mb-4">
+        <div class="card-header">🖊️ Subjectives to Grade</div>
+        <div class="card-body">
+            <ul class="list-group">
+                {% for answer in subjectives_to_grade %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        {{ answer.student.username }} - {{ answer.question.text }}
+                        <a href="{% url 'grade_subjective' answer.id %}" class="btn btn-sm btn-warning">Grade</a>
+                    </li>
+                {% empty %}
+                    <li class="list-group-item">No pending subjective answers.</li>
+                {% endfor %}
+            </ul>
         </div>
-      {% empty %}
-        <p class="text-muted">No notifications.</p>
-      {% endfor %}
     </div>
-  </div>
+
+    <!-- Quiz Management -->
+    <div class="card mb-4">
+        <div class="card-header">📚 Manage Quizzes</div>
+        <div class="card-body">
+            <a href="{% url 'add_quiz' %}" class="btn btn-success">➕ Add Quiz</a>
+            <a href="{% url 'manage_quizzes' %}" class="btn btn-primary">⚙️ Manage Quizzes</a>
+        </div>
+    </div>
+
+    <!-- Result Downloads -->
+    <div class="card mb-4">
+        <div class="card-header">📥 Download Results</div>
+        <div class="card-body">
+            <a href="{% url 'download_results_pdf' %}" class="btn btn-success">Download All Results (PDF)</a>
+        </div>
+    </div>
+
+    <!-- Broadcast -->
+    <div class="card mb-4">
+        <div class="card-header">📢 Broadcast to Students</div>
+        <div class="card-body">
+            <form method="post" action="{% url 'send_broadcast' %}">
+                {% csrf_token %}
+                <textarea name="message" class="form-control mb-2" placeholder="Write your message"></textarea>
+                <button type="submit" class="btn btn-primary">Send</button>
+            </form>
+        </div>
+    </div>
 </div>
 
-<!-- ChartJS for performance -->
+<!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-  // Build chart with server-provided context variable "performance"
-  const labels = [{% for p in performance %}"{{ p.quiz__title|escapejs }}",{% endfor %}];
-  const dataPoints = [{% for p in performance %}{{ p.avg_score|default:0 }},{% endfor %}];
-
-  const ctx = document.getElementById('performanceChart').getContext('2d');
-  const chart = new Chart(ctx, {
+const ctx = document.getElementById('performanceChart').getContext('2d');
+new Chart(ctx, {
     type: 'bar',
     data: {
-      labels,
-      datasets: [{
-        label: 'Average Score',
-        data: dataPoints,
-        fill: false,
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false
+        labels: {{ chart_labels|safe }},
+        datasets: [{
+            label: 'Class Performance',
+            data: {{ chart_data|safe }},
+            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+        }]
     }
-  });
-
-  // Simple AJAX refresh for pending count (optional)
-  async function refreshPending() {
-    try {
-      const res = await fetch("{% url 'ajax_teacher_pending_subjectives' %}");
-      const data = await res.json();
-      // Optionally update DOM or show badge
-      // Example: show browser console
-      console.log('pending subjectives:', data.pending_count);
-    } catch (err) { console.error(err); }
-  }
-  setInterval(refreshPending, 10000);
+});
 </script>
 {% endblock %}

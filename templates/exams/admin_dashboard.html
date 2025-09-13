@@ -1,76 +1,105 @@
-{% extends 'base.html' %}
-{% block title %}Admin Dashboard{% endblock %}
+{% extends "base.html" %}
+{% load static %}
+
 {% block content %}
-<div class="row">
-  <div class="col-md-8">
-    <div class="bg-white p-3 rounded shadow-sm mb-3 d-flex justify-content-between align-items-center">
-      <div>
-        <h5>Stats</h5>
-        <div>Approved users: {{ approved }}</div>
-        <div>Pending users: {{ pended }}</div>
-        <div>Teachers: {{ teachers }}</div>
-        <div>Students: {{ students }}</div>
-      </div>
-      <div>
-        <a class="btn btn-primary" href="{% url 'admin:quizzes_quiz_add' %}">Add Quiz</a>
-        <a class="btn btn-secondary" href="{% url 'admin:users_user_add' %}">Create User</a>
-      </div>
+<div class="container mt-4">
+    <h2 class="mb-3">🛠️ Admin Dashboard</h2>
+
+    <!-- Notifications -->
+    <div class="mb-4">
+        <h5>Notifications 
+            <span class="badge bg-danger">{{ unread_notifications_count }}</span>
+        </h5>
+        <ul class="list-group">
+            {% for note in notifications %}
+                <li class="list-group-item {% if not note.is_read %}fw-bold{% endif %}">
+                    {{ note.message }}
+                    <small class="text-muted float-end">{{ note.created_at|date:"M d, Y H:i" }}</small>
+                </li>
+            {% empty %}
+                <li class="list-group-item">No notifications</li>
+            {% endfor %}
+        </ul>
     </div>
 
-    <div class="bg-white p-3 rounded shadow-sm mb-3">
-      <h4>Leaderboard</h4>
-      <ol>
-        {% for row in leaderboard %}
-          <li>{{ row.student__username }} — {{ row.avg_score|floatformat:2 }}</li>
-        {% endfor %}
-      </ol>
+    <!-- Stats -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5>👥 Total Users</h5>
+                    <p>{{ total_users }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5>✅ Approved</h5>
+                    <p>{{ approved_users }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5>📚 Teachers</h5>
+                    <p>{{ total_teachers }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5>🎓 Students</h5>
+                    <p>{{ total_students }}</p>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div class="bg-white p-3 rounded shadow-sm">
-      <h4>Recent Actions</h4>
-      {% for a in actions %}
-        <div class="border p-2 mb-2">
-          <div><strong>{{ a.user }}</strong> — {{ a.action }}</div>
-          <div class="small text-muted">{{ a.timestamp|date:"SHORT_DATETIME_FORMAT" }}</div>
-          {% if a.details %}
-            <div class="small text-muted">Details: {{ a.details }}</div>
-          {% endif %}
+    <!-- Leaderboard -->
+    <div class="card mb-4">
+        <div class="card-header">🏆 Leaderboard</div>
+        <div class="card-body">
+            <ol>
+                {% for student in leaderboard %}
+                    <li>{{ student.username }} - {{ student.score }} points</li>
+                {% empty %}
+                    <p>No leaderboard data yet.</p>
+                {% endfor %}
+            </ol>
         </div>
-      {% endfor %}
     </div>
-  </div>
 
-  <div class="col-md-4">
-    <div class="bg-white p-3 rounded shadow-sm">
-      <h5>Notifications</h5>
-      {% for n in notifications %}
-        <div class="mb-2">
-          <strong>{{ n.title }}</strong>
-          <div class="small text-muted">{{ n.created_at|date:"SHORT_DATETIME_FORMAT" }}</div>
-          <div>{{ n.message|truncatechars:120 }}</div>
+    <!-- Quiz Management -->
+    <div class="card mb-4">
+        <div class="card-header">📚 Manage Quizzes</div>
+        <div class="card-body">
+            <a href="{% url 'add_quiz' %}" class="btn btn-success">➕ Add Quiz</a>
+            <a href="{% url 'manage_quizzes' %}" class="btn btn-primary">⚙️ Manage Quizzes</a>
         </div>
-      {% endfor %}
-      <hr>
-      <h6>Broadcast</h6>
-      <form method="post" action="{% url 'broadcast' %}">
-        {% csrf_token %}
-        <div class="mb-2">
-          <input name="title" class="form-control" placeholder="Title" required>
-        </div>
-        <div class="mb-2">
-          <select name="target_role" class="form-control">
-            <option value="all">All</option>
-            <option value="teachers">Teachers</option>
-            <option value="students">Students</option>
-            <option value="admins">Admins</option>
-          </select>
-        </div>
-        <div class="mb-2">
-          <textarea name="message" class="form-control" placeholder="Message" rows="3" required></textarea>
-        </div>
-        <button class="btn btn-primary w-100">Broadcast</button>
-      </form>
     </div>
-  </div>
+
+    <!-- User Management -->
+    <div class="card mb-4">
+        <div class="card-header">👤 Manage Users</div>
+        <div class="card-body">
+            <a href="{% url 'create_user' %}" class="btn btn-success">➕ Create User</a>
+            <a href="{% url 'manage_users' %}" class="btn btn-primary">⚙️ Manage Users</a>
+        </div>
+    </div>
+
+    <!-- Broadcast -->
+    <div class="card mb-4">
+        <div class="card-header">📢 Broadcast to Teachers & Students</div>
+        <div class="card-body">
+            <form method="post" action="{% url 'send_broadcast' %}">
+                {% csrf_token %}
+                <textarea name="message" class="form-control mb-2" placeholder="Write your message"></textarea>
+                <button type="submit" class="btn btn-primary">Send</button>
+            </form>
+        </div>
+    </div>
 </div>
 {% endblock %}

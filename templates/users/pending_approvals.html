@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h3>Pending Approvals</h3>
+  <table class="table">
+    <thead><tr><th>User</th><th>Role</th><th>Registered</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for u in pending %}
+      <tr>
+        <td>{{ u.get_full_name }} ({{ u.username }})</td>
+        <td>{{ u.role }}</td>
+        <td>{{ u.date_joined|date:"d-m-Y H:i" }}</td>
+        <td>
+          <a class="btn btn-sm btn-success" href="{% url 'approve_user' u.id %}">Approve</a>
+          <a class="btn btn-sm btn-danger" href="{% url 'reject_user' u.id %}">Reject</a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="4">No pending users.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

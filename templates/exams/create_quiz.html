@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block title %}Create Quiz{% endblock %}
+{% block content %}
+{% csrf_token %}
+<div class="container mt-4">
+  <h2>Create Quiz</h2>
+
+  <div id="alert-area"></div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="mb-3">
+        <label class="form-label">Title</label>
+        <input id="quiz-title" class="form-control" placeholder="Quiz title">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Subject</label>
+        <select id="quiz-subject" class="form-select">
+          {% for s in subjects %}
+            <option value="{{ s.id }}">{{ s.name }} ({{ s.school_class.name }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="mb-3 row">
+        <div class="col-md-4">
+          <label class="form-label">Duration (minutes)</label>
+          <input id="quiz-duration" type="number" class="form-control" value="30">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Publish now?</label>
+          <select id="quiz-publish" class="form-select">
+            <option value="true">Yes</option>
+            <option value="false" selected>No</option>
+          </select>
+        </div>
+      </div>
+
+      <hr>
+
+      <h5>Questions</h5>
+      <div id="questions-container"></div>
+
+      <div class="mt-3">
+        <button id="add-question-btn" class="btn btn-outline-primary">+ Add Question</button>
+      </div>
+
+      <div class="mt-4">
+        <button id="submit-quiz-btn" class="btn btn-success">Create Quiz</button>
+        <a href="{% url 'dashboard' %}" class="btn btn-link">Cancel</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- JS: dynamic question builder -->
+<script>
+(function() {
+  let qIndex = 0;
+
+  function showAlert(msg, kind='success') {
+    const area = document.getElementById('alert-area');
+    area.innerHTML = `<div class="alert ${kind === 'success' ? 'bg-green-100 text-green-800 border border-green-400' : 'bg-red-100 text-red-800 border border-red-400'} p-3 rounded mb-2">${msg}</div>`;
+    setTimeout(()=> area.innerHTML = '', 3000);
+  }
+
+  function newQuestionBlock() {
+    const idx = qIndex++;
+    const container = document.createElement('div');
+    container.className = 'card mb-2 p-3';
+    container.dataset.qindex = idx;
+    container.innerHTML = `
+      <div class="mb-2 d-flex justify-content-between">
+        <strong>Question <span class="qnum">${idx+1}</span></strong>
+        <button class="btn btn-sm btn-danger remove-question">Remove</button>
+      </div>
+      <div class="mb-2">
+        <textarea class="form-control q-text" placeholder="Question text"></textarea>
+      </div>
+      <div class="mb-2 row">
+        <div class="col-md-4">
+          <select class="form-select q-type">
+            <option value="objective">Objective (auto-graded)</option>
+            <option value="subjective">Subjective (manual)</option>
+          </select>
+        </div>
+        <div class="col-md-2">
+          <input type="number" class="form-control q-marks" value="1" min="0" placeholder="Marks">
+        </div>
+      </div>
+      <div class="choices-section mb-2">
+        <h6>Choices</h6>
+        <div class="choices-list"></div>
+        <button class="btn btn-sm btn-outline-secondary add-choice">+ Add Choice</button>
+      </div>
+    `;
+
+    // handlers
+    container.querySelector('.remove-question').addEventListener('click', () => container.remove());
+    container.querySelector('.add-choice').addEventListener('click', (ev) => {
+      ev.preventDefault();
+      addChoice(container);
+    });
+    // hide/show choices if subjective
+    container.querySelector('.q-type').addEventListener('change', (e) => {
+      if (e.target.value === 'subjective') {
+        container.querySelector('.choices-section').style.display = 'none';
+      } else {
+        container.querySelector('.choices-section').style.display = '';
+      }
+    });
+
+    // default: add two choices for objective
+    addChoice(container); addChoice(container);
+
+    return container;
+  }
+
+  function addChoice(questionContainer, text='', isCorrect=false) {
+    const list = questionContainer.querySelector('.choices-list');
+    const choiceIdx = list.children.length;
+    const div = document.createElement('div');
+    div.className = 'input-group mb-2';
+    div.innerHTML = `
+      <input type="text" class="form-control choice-text" placeholder="Choice text" value="${text}">
+      <span class="input-group-text">
+        <input type="checkbox" class="choice-correct" ${isCorrect ? 'checked' : ''}/>
+      </span>
+      <button class="btn btn-danger btn-sm remove-choice">✖</button>
+    `;
+    div.querySelector('.remove-choice').addEventListener('click', () => div.remove());
+    list.appendChild(div);
+  }
+
+  document.getElementById('add-question-btn').addEventListener('click', (e) => {
+    e.preventDefault();
+    const q = newQuestionBlock();
+    document.getElementById('questions-container').appendChild(q);
+  });
+
+  document.getElementById('submit-quiz-btn').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const title = document.getElementById('quiz-title').value.trim();
+    const subject_id = document.getElementById('quiz-subject').value;
+    const duration = parseInt(document.getElementById('quiz-duration').value) || 30;
+    const is_published = document.getElementById('quiz-publish').value === 'true';
+
+    if (!title) { showAlert('Quiz title is required', 'error'); return; }
+
+    // collect questions
+    const qnodes = document.querySelectorAll('#questions-container > .card');
+    const questions = [];
+    for (const qn of qnodes) {
+      const text = qn.querySelector('.q-text').value.trim();
+      const qtype = qn.querySelector('.q-type').value;
+      const marks = parseFloat(qn.querySelector('.q-marks').value) || 1;
+
+      if (!text) { showAlert('All questions must have text', 'error'); return; }
+
+      const qobj = { text, question_type: qtype, marks };
+
+      if (qtype === 'objective') {
+        const choices = [];
+        const choiceNodes = qn.querySelectorAll('.choices-list .input-group');
+        if (choiceNodes.length === 0) {
+          showAlert('Objective questions require at least one choice', 'error'); return;
+        }
+        for (const c of choiceNodes) {
+          const ctext = c.querySelector('.choice-text').value.trim();
+          const cis = c.querySelector('.choice-correct').checked;
+          if (!ctext) { showAlert('Choice text cannot be empty', 'error'); return; }
+          choices.push({ text: ctext, is_correct: cis });
+        }
+        qobj.choices = choices;
+      }
+      questions.push(qobj);
+    }
+
+    // payload
+    const payload = {
+      title,
+      subject_id: subject_id,
+      duration_minutes: duration,
+      is_published: is_published,
+      questions
+    };
+
+    // send via AJAX (JSON)
+    try {
+      const csrftoken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+      const res = await fetch("{% url 'create_quiz_ajax' %}", {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrftoken,
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        showAlert(data.error || 'Failed to create quiz', 'error');
+      } else {
+        showAlert('Quiz created successfully!', 'success');
+        // optionally redirect to manage quizzes
+        setTimeout(()=> window.location.href = `{% url 'manage_quizzes' %}`, 900);
+      }
+    } catch (err) {
+      console.error(err);
+      showAlert('Network error when creating quiz', 'error');
+    }
+  });
+
+  // add a first question by default
+  document.getElementById('add-question-btn').click();
+})();
+</script>
+{% endblock %}

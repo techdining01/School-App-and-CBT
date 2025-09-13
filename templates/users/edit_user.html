@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% if messages %}
+  {% for message in messages %}
+    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+      {{ message }}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+  {% endfor %}
+{% endif %}
+
+  <div class="container mt-4">
+    <div class="container mt-4">
+      <div class="d-flex justify-content-between align-items-center mt-3">
+        <h3>Edit {{ user_obj.get_full_name }}</h3><br>
+            <nav class="d-flex gap-3">
+              <a class="btn btn-dark" style="width: 80px; height: 40px;font-size: 18px;" href="{% url 'admin_manage_users' %}">Back</a>
+            </nav>
+      </div>
+    </div><br>
+  <form method="POST" enctype="multipart/form-data">
+    {% csrf_token %}
+    <div class="card p-4">
+      {{ form.as_p }}
+      <button type="submit" class="btn btn-success">Save Changes</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+
