@@ -1,82 +1,20 @@
+{% comment %} 
 {% extends "base.html" %}
 {% load static %}
-
 {% block content %}
 <div class="container mt-4">
-    <h1 class="mb-3">🛠️ Admin Dashboard</h1>
-
-       <!-- Stats -->
-    <div class="row mb-4">
-        <div class="col-md-3">
-            <div class="card text-center">
-                <div class="card-body">
-                    <h5>✅ Approved</h5>
-                    <p>{{ approved }}</p>
-                </div>
-            </div>
+    <div class="d-flex justify-content-between align-items-center mt-3">
+        <h1 class="fw-bold mb-3"> 🛠️ Admin Dashboard</h1>
+          <nav class="d-flex gap-3">
+            <a class="btn btn-success" style="width: 80px; height: 40px;font-size: .95rem;" href="{% url 'user_approval_list' %}">Approval</a>
+          </nav>
         </div>
-          <div class="col-md-3">
-            <div class="card text-center">
-                <div class="card-body">
-                    <h5>👥 Pended</h5>
-                    <p>{{ pended }}</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-center">
-                <div class="card-body">
-                    <h5>📚 Teachers</h5>
-                    <p>{{ teachers }}</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-center">
-                <div class="card-body">
-                    <h5>🎓 Students</h5>
-                    <p>{{ students }}</p>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Leaderboard -->
-    <div class="card mb-4">
-        <div class="card-header">🏆 Leaderboard</div>
-        <div class="card-body">
-            <ol>
-                {% for student in leaderboard %}
-                    <li>{{ student.username }} - {{ student.score }} points</li>
-                {% empty %}
-                    <p>No leaderboard data yet.</p>
-                {% endfor %}
-            </ol>
-        </div>
-    </div>
-
-    <!-- Quiz Management -->
-    <div class="card mb-4">
-        <div class="card-header">📚 Manage Quizzes</div>
-        <div class="card-body">
-            <a href="{% url 'create_quiz_page' %}" class="btn btn-success">➕ Add Quiz</a>
-            <a href="{% url 'manage_quizzes_page' %}" class="btn btn-primary">⚙️ Manage Quizzes</a>
-        </div>
-    </div>
-
-    <!-- User Management -->
-    <div class="card mb-4">
-        <div class="card-header">👤 Manage Users</div>
-        <div class="card-body">
-            <a href="{% url 'create_user' %}" class="btn btn-success">➕ Create User</a>
-            <a href="{% url 'manage_users' %}" class="btn btn-primary">⚙️ Manage Users</a>
-        </div>
-    </div>
-
-    <!-- Broadcast -->
-    <div class="card mb-4">
-        <div class="card-header">📢 Broadcast to Teachers & Students</div>
-        <div class="card-body">
+        <br>
+        
+      <!-- Broadcast -->
+      <div class="card mb-4">
+          <div class="card-header">📢 Broadcast to Teachers & Students</div>
+          <div class="card-body">
             <form method="post" action="{% url 'send_broadcast' %}">
                 {% csrf_token %}
                 <textarea name="message" class="form-control mb-2" placeholder="Write your message"></textarea>
@@ -85,4 +23,314 @@
         </div>
     </div>
 </div>
+{% endblock %} {% endcomment %}
+
+
+{% extends "base.html" %}
+{% load static %}
+{% block title %} Admin Dashboard {% endblock title %}
+{% block content %}
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <img src="{% static 'img/school_logo.png' %}" alt="Logo" style="height:48px;">
+      <h3 class="d-inline ms-2">Admin Dashboard</h3>
+    </div>
+    <div class="d-flex align-items-center">
+      <img src="{{ request.user.profile_picture.url if request.user.profile_picture else static('img/default_profile.png') }}" alt="me" class="rounded-circle" style="height:40px;">
+      <div class="ms-2">
+        <div>{{ request.user.get_full_name }}</div>
+        <small class="text-muted">{{ request.user.role }}</small>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats row -->
+  <div class="row" id="stats-container"></div>
+
+  <!-- Two-column: Pending users + Leaderboard -->
+  <div class="row mt-3">
+    <div class="col-md-7">
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between">
+          <strong>Pending Users</strong>
+          <small>Auto-refresh every 10s</small>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-hover mb-0">
+            <thead class="table-light"><tr><th>Username</th><th>Email</th><th>Role</th><th>Joined</th><th>Action</th></tr></thead>
+            <tbody id="pending-users"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-header"><strong>Available Quizzes</strong></div>
+        <div class="card-body">
+          <div id="quizzes-list"></div>
+          <nav><ul class="pagination" id="quizzes-pagination"></ul></nav>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="col-md-5">
+      <!-- Broadcast -->
+      <div class="card mb-3 p-2">
+        <div class="card-header"><strong>Broadcast Message</strong></div>
+        <div class="card-body">
+          <form id="broadcastForm">
+            <div class="mb-2">
+              <label class="form-label">Send to</label>
+              <select name="role" id="broadcastRole" class="form-select">
+                <option value="student">Students</option>
+                <option value="teacher">Teachers</option>
+              </select>
+            </div>
+            <div class="mb-2">
+              <textarea id="broadcastMessage" class="form-control" rows="3" placeholder="Write message..."></textarea>
+            </div>
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-primary">Send Broadcast</button>
+              <button id="downloadPdf" type="button" class="btn btn-danger">Download PDF</button>
+              <button id="downloadExcel" type="button" class="btn btn-success">Download Excel</button>
+            </div>
+            <div id="broadcastResult" class="mt-2"></div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Leaderboard -->
+      <div class="card mb-3">
+        <div class="card-header"><strong>Leaderboard</strong></div>
+        <div class="card-body p-0">
+          <table class="table mb-0">
+            <thead class="table-light"><tr><th>#</th><th>Student</th><th>Avg Score</th></tr></thead>
+            <tbody id="leaderboard"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Class Performance Chart -->
+      <div class="card mb-3">
+        <div class="card-header"><strong>Class Performance</strong></div>
+        <div class="card-body">
+          <canvas id="classPerformanceChart" height="150"></canvas>
+        </div>
+      </div>
+
+      <!-- Notifications -->
+      <div class="card mb-3">
+        <div class="card-header"><strong>Notifications</strong></div>
+        <ul class="list-group list-group-flush" id="admin-notifications"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent actions (paginated) -->
+  <div class="card mt-3">
+    <div class="card-header d-flex justify-content-between">
+      <strong>Recent Actions</strong>
+      <div>
+        <small>Page: </small>
+        <input id="logsPage" type="number" value="1" min="1" style="width:70px" class="form-control d-inline-block">
+      </div>
+    </div>
+    <ul class="list-group list-group-flush" id="logs"></ul>
+    <div class="card-body">
+      <small class="text-muted">Actions are logged for auditing.</small>
+    </div>
+  </div>
+
+</div>
+
+<!-- Extra JS -->
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const DATA_URL = "{% url 'exams:admin_dashboard_data' %}";
+const csrftoken = "{{ csrf_token }}";
+
+let classChart = null;
+async function fetchDashboard(page_logs=1, page_quizzes=1) {
+  const url = new URL(DATA_URL, window.location.origin);
+  url.searchParams.set("logs_page", page_logs);
+  url.searchParams.set("quizzes_page", page_quizzes);
+  url.searchParams.set("logs_page_size", 10);
+  url.searchParams.set("quizzes_page_size", 6);
+
+  const res = await fetch(url);
+  const data = await res.json();
+
+  // Stats
+  const s = data.stats;
+  document.getElementById("stats-container").innerHTML = `
+    <div class="col-md-2"><div class="card p-2 text-center">Total Users<br><strong>${s.total_users}</strong></div></div>
+    <div class="col-md-2"><div class="card p-2 text-center">Admins<br><strong>${s.admins}</strong></div></div>
+    <div class="col-md-2"><div class="card p-2 text-center">Teachers<br><strong>${s.teachers}</strong></div></div>
+    <div class="col-md-2"><div class="card p-2 text-center">Students<br><strong>${s.students}</strong></div></div>
+    <div class="col-md-2"><div class="card p-2 text-center">Pending<br><strong>${s.pending_users}</strong></div></div>
+    <div class="col-md-2"><div class="card p-2 text-center">Quizzes<br><strong>${s.quizzes}</strong></div></div>
+  `;
+
+  // Pending users
+  let pendingHtml = "";
+  data.pending_list.forEach(u => {
+    pendingHtml += `
+      <tr>
+        <td>${u.username}</td>
+        <td>${u.email}</td>
+        <td>${u.role}</td>
+        <td>${new Date(u.date_joined).toLocaleString()}</td>
+        <td>
+          <button class="btn btn-success btn-sm" onclick="updateUserStatus(${u.id}, 'approve')">Approve</button>
+          <button class="btn btn-danger btn-sm" onclick="updateUserStatus(${u.id}, 'reject')">Reject</button>
+          <button class="btn btn-secondary btn-sm" onclick="updateUserStatus(${u.id}, 'pending')">Pend</button>
+        </td>
+      </tr>`;
+  });
+  document.getElementById("pending-users").innerHTML = pendingHtml;
+
+  // Quizzes list (paginated)
+  let quizzesHtml = "";
+  data.quizzes.forEach(q => {
+    quizzesHtml += `
+      <div class="border p-2 mb-2">
+        <div class="d-flex justify-content-between">
+          <div><strong>${q.title}</strong> <div class="small text-muted">${q.subject} • ${q.class_name}</div></div>
+          <div>
+            <small class="d-block">By ${q.created_by}</small>
+            <small class="d-block">${new Date(q.start_time).toLocaleString()} - ${new Date(q.end_time).toLocaleString()}</small>
+            <button class="btn btn-sm btn-outline-primary mt-1" onclick="togglePublish(${q.id}, ${q.is_published})">${q.is_published ? 'Unpublish' : 'Publish'}</button>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+  document.getElementById("quizzes-list").innerHTML = quizzesHtml;
+
+  // Quizzes pagination
+  const quizzesPages = data.quizzes_total_pages || 1;
+  let pagHtml = "";
+  for (let i=1;i<=quizzesPages;i++){
+    pagHtml += `<li class="page-item ${i===page_quizzes?'active':''}"><a class="page-link" href="#" onclick="fetchDashboard(${document.getElementById('logsPage').value||1}, ${i}); return false;">${i}</a></li>`;
+  }
+  document.getElementById("quizzes-pagination").innerHTML = pagHtml;
+
+  // Leaderboard
+  let lbHtml = "";
+  data.leaderboard.forEach((l, idx) => {
+    lbHtml += `<tr><td>${idx+1}</td><td>${l.username}</td><td>${l.avg_score.toFixed(2)}</td></tr>`;
+  });
+  document.getElementById("leaderboard").innerHTML = lbHtml;
+
+  // Logs (paginated)
+  let logsHtml = "";
+  data.logs.forEach(l => {
+    logsHtml += `<li class="list-group-item">${l.user} — ${l.action} <div class="small text-muted">${new Date(l.timestamp).toLocaleString()}</div></li>`;
+  });
+  document.getElementById("logs").innerHTML = logsHtml;
+
+  // Notifications
+  let notifHtml = "";
+  data.notifications.forEach(n => {
+    notifHtml += `<li class="list-group-item">${n.message} <div class="small text-muted">${new Date(n.created_at).toLocaleString()}</div></li>`;
+  });
+  document.getElementById("admin-notifications").innerHTML = notifHtml;
+
+  // Class performance chart
+  const labels = data.class_performance.map(c => c.class_name);
+  const values = data.class_performance.map(c => c.avg_score);
+  const ctx = document.getElementById("classPerformanceChart").getContext("2d");
+  if (classChart) classChart.destroy();
+  classChart = new Chart(ctx, {
+    type: "bar",
+    data: { labels, datasets: [{ label: "Avg Score", data: values, backgroundColor: "rgba(54,162,235,0.7)" }] }
+  });
+}
+
+// Update user status via POST
+async function updateUserStatus(userId, status) {
+  const resp = await fetch(DATA_URL, {
+    method: "POST",
+    headers: {"Content-Type":"application/json", "X-CSRFToken": csrftoken},
+    body: JSON.stringify({action: "update_user_status", user_id: userId, status: status})
+  });
+  const d = await resp.json();
+  if (d.ok) {
+    alert(d.message);
+    fetchDashboard();
+  } else {
+    alert(d.error || "Error");
+  }
+}
+
+// Broadcast form handler
+document.getElementById("broadcastForm").addEventListener("submit", async function(e){
+  e.preventDefault();
+  const role = document.getElementById("broadcastRole").value;
+  const message = document.getElementById("broadcastMessage").value.trim();
+  if (!message) { alert("Message empty"); return; }
+  const resp = await fetch(DATA_URL, {
+    method: "POST",
+    headers: {"Content-Type":"application/json", "X-CSRFToken": csrftoken},
+    body: JSON.stringify({action: "broadcast", role: role, message: message})
+  });
+  const d = await resp.json();
+  if (d.ok) {
+    document.getElementById("broadcastResult").innerText = d.message;
+    document.getElementById("broadcastMessage").value = "";
+    fetchDashboard();
+  } else {
+    document.getElementById("broadcastResult").innerText = d.error || "Error sending broadcast";
+  }
+});
+
+// Download buttons
+document.getElementById("downloadPdf").addEventListener("click", async function(){
+  // POST action download format pdf -> returns PDF stream
+  const resp = await fetch(DATA_URL, {
+    method: "POST",
+    headers: {"Content-Type":"application/json", "X-CSRFToken": csrftoken},
+    body: JSON.stringify({action:"download", format:"pdf"})
+  });
+  if (!resp.ok) { const j = await resp.json().catch(()=>({})); alert(j.error||"Download failed"); return; }
+  const blob = await resp.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "all_attempts.pdf"; document.body.appendChild(a); a.click(); a.remove();
+  fetchDashboard();
+});
+
+document.getElementById("downloadExcel").addEventListener("click", async function(){
+  const resp = await fetch(DATA_URL, {
+    method: "POST",
+    headers: {"Content-Type":"application/json", "X-CSRFToken": csrftoken},
+    body: JSON.stringify({action:"download", format:"excel"})
+  });
+  if (!resp.ok) { const j = await resp.json().catch(()=>({})); alert(j.error||"Download failed"); return; }
+  const blob = await resp.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "all_attempts.xlsx"; document.body.appendChild(a); a.click(); a.remove();
+  fetchDashboard();
+});
+
+// publish toggle (optional helper)
+async function togglePublish(quizId, currentlyPublished) {
+  // you need a separate API to toggle publish; for demo we just alert
+  alert("Publishing/Unpublishing quiz not wired here. Add endpoint to toggle publish.");
+}
+
+// logs page input
+document.getElementById("logsPage").addEventListener("change", function(){
+  const p = parseInt(this.value) || 1;
+  fetchDashboard(p, 1);
+});
+
+// initial load & interval refresh
+fetchDashboard();
+setInterval(()=>fetchDashboard(parseInt(document.getElementById('logsPage').value||1,10), 1), 10000);
+
+</script>
 {% endblock %}

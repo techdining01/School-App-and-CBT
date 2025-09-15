@@ -10,7 +10,7 @@ from .forms import TeacherAdminForm, EditUserRegistrationForm, EditTeacherAdminF
 from django.core.paginator import Paginator
 from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.http import require_POST   
-
+from exams.models import ActionLog  
 
 User = get_user_model()
 
@@ -124,8 +124,6 @@ def create_user(request):
 #     return redirect('edit_profile')
 
 
-
-
 def is_admin_or_superadmin(user):
     return user.role in ["admin", "superadmin"]
 
@@ -165,8 +163,6 @@ def pending_user(request, user_id):
     user.save()
     messages.info(request, f"{user.username} is now pending ⏳.")
     return redirect("user_approval_list")
-
-
 
 
 
@@ -219,20 +215,72 @@ def load_users(request):
     return JsonResponse(data)
 
 
-@login_required
-@user_passes_test(is_admin)
+@require_POST
+def update_user(request, user_id):
+    """Edit user details via AJAX"""
+    user = get_object_or_404(User, id=user_id)
+
+    old_data = {
+        "username": user.username,
+        "email": user.email,
+        "role": user.role,
+    }
+
+    username = request.POST.get("username")
+    email = request.POST.get("email")
+    role = request.POST.get("role")
+
+    if username:
+        user.username = username
+    if email:
+        user.email = email
+    if role in dict(User.ROLE_CHOICES):
+        user.role = role
+
+    user.save()
+
+    # Log action
+    ActionLog.objects.create(
+        user=request.user,
+        action="Edited user",
+        model_name="User",
+        object_id=user.id,
+        details={
+            "old": old_data,
+            "new": {"username": user.username, "email": user.email, "role": user.role},
+        },
+    )
+
+    return JsonResponse({
+        "success": True,
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "role": user.get_role_display(),
+    })
+
+
 @require_POST
 def delete_user(request, user_id):
-    """
-    Handles AJAX delete user
-    """
+    """Delete user via AJAX"""
     user = get_object_or_404(User, id=user_id)
     if user.role == "superadmin":
         return JsonResponse({"success": False, "message": "Cannot delete superadmin"})
+    
+    user_data = {"username": user.username, "email": user.email, "role": user.role}
 
     user.delete()
-    return JsonResponse({"success": True})
 
+    # Log action
+    ActionLog.objects.create(
+        user=request.user,
+        action="Deleted user",
+        model_name="User",
+        object_id=user_id,
+        details=user_data,
+    )
+
+    return JsonResponse({"success": True, "id": user_id})
 
 
 @login_required
@@ -285,3 +333,30 @@ def send_broadcast(request):
 
         messages.success(request, "Broadcast sent successfully ✅")
     return redirect("dashboard")
+
+
+from .models import User, UserStatusLog
+
+def update_user_status(request, user_id):
+    user = get_object_or_404(User, id=user_id)
+    new_status = request.POST.get("status")  # "approve" / "reject" / "pending"
+
+    if new_status not in ["approve", "reject", "pending"]:
+        messages.error(request, "Invalid status")
+        return redirect("manage_users")
+
+    old_status = user.status  # assuming User model has a `status` field
+    user.status = new_status
+    user.save()
+
+    # Log change
+    UserStatusLog.objects.create(
+        user=user,
+        old_status=old_status,
+        new_status=new_status,
+        changed_by=request.user,
+        changed_at=timezone.now()
+    )
+
+    messages.success(request, f"{user.username}'s status updated to {new_status}.")
+    return redirect("manage_users")

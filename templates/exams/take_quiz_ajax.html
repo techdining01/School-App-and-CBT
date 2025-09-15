@@ -107,7 +107,7 @@
   }
 
   document.getElementById('submit-btn').addEventListener('click', (e)=>{
-    if (!confirm('Submit quiz?')) return;
+    if (!confirm('Submit Exam?')) return;
     submitAttempt(false);
   });
 
@@ -118,7 +118,7 @@
 </script>
 <script>
     const quizQuestions = JSON.parse('{{ questions_json|escapejs }}');
-    console.log("Quiz Questions:", quizQuestions);
+    console.log("Exam Questions:", quizQuestions);
     // You can now loop through quizQuestions in JS and render them dynamically
 </script>
 

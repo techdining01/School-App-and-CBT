@@ -30,9 +30,11 @@ class Quiz(models.Model):
     end_time = models.DateTimeField()
     duration_minutes = models.PositiveIntegerField(default=30)  # Timer
     is_published = models.BooleanField(default=False)
+    allow_retake = models.BooleanField(default=False)  # ✅ new field you asked for
 
     def __str__(self):
         return f"{self.title} - {self.subject}"
+
 
 
 class Question(models.Model):
@@ -65,7 +67,7 @@ class StudentQuizAttempt(models.Model):
     started_at = models.DateTimeField(auto_now_add=True)
     end_time = models.DateTimeField(null=True, blank=True)  # quiz expiry
     completed = models.BooleanField(default=False)  # submitted or not
-    retake_allowed = models.BooleanField(default=False)  # admin override
+    retake_allowed = models.BooleanField(default=False)  # ✅ admin/superadmin override
     retake_count = models.PositiveIntegerField(default=0)  # how many times student retook
     score = models.FloatField(default=0.0)  # total score for the attempt
 
@@ -74,33 +76,12 @@ class StudentQuizAttempt(models.Model):
         return not self.completed and (self.end_time is None or timezone.now() < self.end_time)
 
     def can_retake(self):
-        """Allow retake if admin has granted it."""
-        return self.retake_allowed
+        """Allow retake if admin has granted it, or quiz allows retakes globally."""
+        return self.retake_allowed or self.quiz.allow_retake
 
     def __str__(self):
         return f"{self.student} - {self.quiz} (Retakes: {self.retake_count})"
 
-
-class ObjectiveAnswer(models.Model):
-    attempt = models.ForeignKey(StudentQuizAttempt, on_delete=models.CASCADE, related_name="objective_answers")
-    question = models.ForeignKey(Question, on_delete=models.CASCADE)
-    choice = models.ForeignKey(Choice, on_delete=models.SET_NULL, null=True, blank=True)
-
-    def is_correct(self):
-        return self.choice and self.choice.is_correct
-
-
-class SubjectiveAnswer(models.Model):
-    attempt = models.ForeignKey(StudentQuizAttempt, on_delete=models.CASCADE, related_name="subjective_answers")
-    question = models.ForeignKey(Question, on_delete=models.CASCADE)
-    answer_text = models.TextField()
-    marks_awarded = models.FloatField(null=True, blank=True)  # null until teacher marks
-    graded = models.BooleanField(default=False)
-    graded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="graded_subjectives")
-    graded_at = models.DateTimeField(null=True, blank=True)
-
-    def is_graded(self):
-        return self.marks_awarded is not None
 
 
 class Answer(models.Model):
@@ -131,3 +112,80 @@ class ActionLog(models.Model):
     def __str__(self):
         return f"{self.user} {self.action} @ {self.timestamp}"
 
+
+
+
+
+
+# class Answer(models.Model):
+#     """
+#     Represents a student's answer to a quiz question.
+    
+#     - For **Objective questions**:
+#         * `selected_choice` stores the chosen option.
+#         * `obtained_marks` is set immediately (auto-graded).
+    
+#     - For **Subjective questions**:
+#         * `text_answer` stores the free-text response.
+#         * `obtained_marks` remains 0 until graded.
+#         * `is_pending=True` until a teacher/admin grades it.
+    
+#     Common fields:
+#         * `feedback` can be used to explain grading.
+#         * `graded_by` + `graded_at` track manual grading history.
+#     """
+
+#     attempt = models.ForeignKey("StudentQuizAttempt", on_delete=models.CASCADE, related_name='answers')
+#     question = models.ForeignKey("Question", on_delete=models.CASCADE)
+
+#     # Objective
+#     selected_choice = models.ForeignKey("Choice", on_delete=models.SET_NULL, null=True, blank=True)
+
+#     # Subjective
+#     text_answer = models.TextField(blank=True, null=True)
+
+#     # Common
+#     obtained_marks = models.FloatField(default=0.0)
+#     graded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='graded_answers')
+#     graded_at = models.DateTimeField(null=True, blank=True)
+#     feedback = models.TextField(blank=True, null=True)
+#     is_pending = models.BooleanField(default=False)  # True for subjective until graded
+
+#     def __str__(self):
+#         return f"Answer by {self.attempt.student} for Q{self.question.id}"
+
+#     # -----------------------------
+#     # 🔹 Helper methods
+#     # -----------------------------
+
+#     def is_objective(self):
+#         return self.question.question_type == "objective"
+
+#     def is_subjective(self):
+#         return self.question.question_type == "subjective"
+
+#     def is_correct(self):
+#         """For objective questions only."""
+#         return self.is_objective() and self.selected_choice and self.selected_choice.is_correct
+
+#     @classmethod
+#     def objective_score(cls, attempt):
+#         """Return total objective marks for a given attempt."""
+#         return cls.objects.filter(
+#             attempt=attempt,
+#             question__question_type="objective"
+#         ).aggregate(total=models.Sum("obtained_marks"))["total"] or 0
+
+#     @classmethod
+#     def subjective_score(cls, attempt):
+#         """Return total subjective marks for a given attempt (graded only)."""
+#         return cls.objects.filter(
+#             attempt=attempt,
+#             question__question_type="subjective",
+#             is_pending=False
+#         ).aggregate(total=models.Sum("obtained_marks"))["total"] or 0
+
+#     @classmethod
+#     def total_score(cls, attempt):
+#         """Return grand total (objective + graded subjective)."""
+#         return cls.objective_score(attempt) + cls.subjective_score(attempt)

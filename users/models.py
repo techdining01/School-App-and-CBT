@@ -82,13 +82,19 @@ class Notification(models.Model):
     )
     message = models.TextField()
     role = models.CharField(max_length=20, choices=ROLE_CHOICES)
-    is_read = models.BooleanField(default=False)
+    is_broadcast = models.BooleanField(default=False)  # optional flag
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ["-created_at"]
 
     def __str__(self):
         return f"To {self.recipient} from {self.sender}: {self.message[:30]}"
 
 
+class UserStatusLog(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="status_logs")
+    old_status = models.CharField(max_length=20, null=True, blank=True)
+    new_status = models.CharField(max_length=20)
+    changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="status_changes")
+    changed_at = models.DateTimeField(default=timezone.now)

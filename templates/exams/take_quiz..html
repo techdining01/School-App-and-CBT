@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h3>{{ quiz.title }} — <small>{{ quiz.subject.name }}</small></h3>
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <div id="timer" class="h5 text-danger">Starting...</div>
+    <div id="autosave-note" class="small text-muted">Autosave: Off</div>
+  </div>
+
+  <div id="questions-area"></div>
+
+  <div class="mt-3">
+    <button id="submit-btn" class="btn btn-success">Submit Quiz</button>
+    <button id="review-btn" class="btn btn-outline-secondary" style="display:none">Review</button>
+  </div>
+
+  <div id="message" class="alert d-none mt-3"></div>
+
+  <!-- hidden CSRF -->
+  <form id="csrf-form" style="display:none;">{% csrf_token %}</form>
+</div>
+
+<script>
+(async function(){
+  const csrftoken = document.querySelector('#csrf-form input[name=csrfmiddlewaretoken]').value;
+  const quizId = {{ quiz.id }};
+  const questions = JSON.parse('{{ questions_json|escapejs }}');
+
+  // Render question blocks
+  const qarea = document.getElementById('questions-area');
+  questions.forEach(q=>{
+    const card = document.createElement('div');
+    card.className = 'card mb-2 p-2';
+    let html = `<div><strong>${q.text}</strong> <span class="small text-muted">(${q.question_type})</span></div>`;
+    if (q.question_type === 'objective') {
+      q.choices.forEach(c=>{
+        const id = `q_${q.id}_c_${c.id}`;
+        html += `<div class="form-check"><input class="form-check-input obj-choice" type="radio" name="q_${q.id}" id="${id}" data-qid="${q.id}" value="${c.id}"><label class="form-check-label" for="${id}">${c.text}</label></div>`;
+      });
+    } else {
+      html += `<textarea class="form-control subj-text" data-qid="${q.id}" rows="4" placeholder="Your answer..."></textarea>`;
+    }
+    card.innerHTML = html;
+    qarea.appendChild(card);
+  });
+
+  // Start or resume attempt
+  async function startAttempt() {
+    const res = await fetch("{% url 'exams:api_start_attempt' quiz.id %}");
+    const d = await res.json();
+    if (!d.ok) {
+      showMessage(d.error || 'Cannot start quiz', 'danger');
+      throw new Error(d.error || 'cannot start');
+    }
+    attemptId = d.attempt_id;
+    endTime = new Date(d.end_time);
+    resumeMode = d.resume;
+    startTimer();
+    // initial autosave after 2s to persist any prefilled answers
+    setTimeout(autosave, 2000);
+    autosaveInterval = setInterval(autosave, 10000);
+    document.getElementById('autosave-note').textContent = 'Autosave: On';
+  }
+
+  // Timer
+  let attemptId = null;
+  let endTime = null;
+  let autosaveInterval = null;
+  let timerInterval = null;
+  let resumeMode = false;
+
+  function startTimer() {
+    function tick(){
+      const now = new Date();
+      const diff = endTime - now;
+      if (diff <= 0) {
+        document.getElementById('timer').textContent = 'Time up — auto-submitting...';
+        clearInterval(timerInterval);
+        clearInterval(autosaveInterval);
+        submitAttempt(true);
+        return;
+      }
+      const mins = Math.floor(diff / 60000);
+      const secs = Math.floor((diff % 60000)/1000).toString().padStart(2,'0');
+      document.getElementById('timer').textContent = `${mins}m ${secs}s`;
+    }
+    tick();
+    timerInterval = setInterval(tick, 1000);
+  }
+
+  // Collect answers from DOM
+  function collectAnswers() {
+    const answers = [];
+    // objectives
+    document.querySelectorAll('.obj-choice:checked').forEach(r=>{
+      answers.push({question_id: parseInt(r.dataset.qid), choice_id: parseInt(r.value)});
+    });
+    // subjectives
+    document.querySelectorAll('.subj-text').forEach(t=>{
+      answers.push({question_id: parseInt(t.dataset.qid), text: t.value});
+    });
+    return answers;
+  }
+
+  // Autosave
+  async function autosave(){
+    if (!attemptId) return;
+    const answers = collectAnswers();
+    try {
+      const res = await fetch(`/exams/api/attempts/${attemptId}/autosave/`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json', 'X-CSRFToken': csrftoken},
+        body: JSON.stringify({answers})
+      });
+      const d = await res.json();
+      if (!d.ok) {
+        showMessage(d.error || 'Autosave failed', 'warning');
+      } else {
+        // tiny ephemeral indication
+        const el = document.getElementById('autosave-note');
+        el.textContent = 'Autosaved';
+        setTimeout(()=> el.textContent = 'Autosave: On', 800);
+      }
+    } catch (err) {
+      console.error(err);
+      showMessage('Network error during autosave', 'danger');
+    }
+  }
+
+  // Submit
+  async function submitAttempt(isAuto=false){
+    if (!attemptId) return;
+    try {
+      const res = await fetch(`/exams/api/attempts/${attemptId}/submit/`, {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrftoken}
+      });
+      const d = await res.json();
+      if (!d.ok) {
+        showMessage(d.message || 'Submit failed', 'danger');
+      } else {
+        showMessage(d.message || 'Submitted', 'success');
+        // show review button
+        document.getElementById('review-btn').style.display = 'inline-block';
+        // stop autosave/timer
+        clearInterval(autosaveInterval);
+        clearInterval(timerInterval);
+        // load review details to show objective results immediately
+        await loadReview();
+      }
+    } catch (err) {
+      console.error(err);
+      showMessage('Network error during submit', 'danger');
+    }
+  }
+
+  // Show messages
+  function showMessage(text, type='info'){
+    const box = document.getElementById('message');
+    box.className = `alert alert-${type}`;
+    box.innerText = text;
+    box.classList.remove('d-none');
+    setTimeout(()=> { box.classList.add('d-none'); }, 3000);
+  }
+
+  // Load review via API and render results
+  async function loadReview(){
+    if (!attemptId) return;
+    try {
+      const res = await fetch(`/exams/api/attempts/${attemptId}/review/`);
+      const d = await res.json();
+      if (!d.ok) { showMessage(d.error||'Review failed','danger'); return; }
+      // render results: highlight wrong objective answers and show subjectives status
+      const answers = d.answers;
+      answers.forEach(a=>{
+        if (a.question_type === 'objective') {
+          // highlight choices
+          const qid = a.question_id;
+          // mark correct/incorrect
+          if (!a.is_correct) {
+            // find the radio and mark label red
+            const selector = `input[name="q_${qid}"][value="${a.selected_choice_id}"]`;
+            const el = document.querySelector(selector);
+            if (el) {
+              el.closest('.form-check').classList.add('border','border-danger','p-1');
+            }
+          } else {
+            // correct -> green
+            const selector = `input[name="q_${qid}"][value="${a.selected_choice_id}"]`;
+            const el = document.querySelector(selector);
+            if (el) {
+              el.closest('.form-check').classList.add('border','border-success','p-1');
+            }
+          }
+        } else {
+          // subjective: show pending or marks
+          const qid = a.question_id;
+          const ta = document.querySelector(`textarea[data-qid="${qid}"]`);
+          if (ta) {
+            if (a.is_pending) {
+              ta.insertAdjacentHTML('afterend', `<div class="small text-warning">Pending teacher grading</div>`);
+            } else {
+              ta.insertAdjacentHTML('afterend', `<div class="small text-success">Graded: ${a.obtained_marks} — Feedback: ${a.feedback || 'None'}</div>`);
+            }
+          }
+        }
+      });
+
+      // totals
+      const totals = d.totals;
+      showMessage(`Objective total: ${totals.objective_total} | Subjective graded: ${totals.subjective_total_graded} | Grand: ${totals.grand_total}`, 'info');
+
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  // Wire submit + review
+  document.getElementById('submit-btn').addEventListener('click', async (e)=>{
+    if (!confirm('Are you sure you want to submit?')) return;
+    await submitAttempt(false);
+  });
+
+  document.getElementById('review-btn').addEventListener('click', loadReview);
+
+  // start now
+  try {
+    await startAttempt();
+  } catch(e){
+    // start failed (message already shown)
+  }
+
+})();
+</script>
+{% endblock %}

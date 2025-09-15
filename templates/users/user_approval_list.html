@@ -28,9 +28,9 @@
                     {% if user.approved == True %}
                         <span class="badge bg-success">Approved</span>
                     {% elif user.approved == False %}
-                        <span class="badge bg-danger">Rejected</span>
+                    <span class="badge bg-warning text-dark">Pending</span>
                     {% else %}
-                        <span class="badge bg-warning text-dark">Pending</span>
+                    <span class="badge bg-danger">Rejected</span>
                     {% endif %}
                 </td>
                 <td>

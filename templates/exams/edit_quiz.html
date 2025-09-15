@@ -1,7 +1,8 @@
 {% extends "base.html" %}
+{% block title %} Edit Exam {% endblock %}
 {% block content %}
 <div class="container mt-4">
-  <h2>Edit Quiz</h2>
+  <h2>Edit Exam</h2>
   <form id="csrf-form" style="display:none;">{% csrf_token %}</form>
 
   <div id="alert-area"></div>
@@ -45,7 +46,7 @@
     <button id="add-question-btn" class="btn btn-outline-primary mt-2">+ Add Question</button>
 
     <div class="mt-3">
-      <button id="save-quiz-btn" class="btn btn-success">Save via AJAX</button>
+      <button id="save-quiz-btn" class="btn btn-success">Save Changes</button>
       <a href="{% url 'manage_quizzes_page' %}" class="btn btn-link">Cancel</a>
     </div>
   </div>
