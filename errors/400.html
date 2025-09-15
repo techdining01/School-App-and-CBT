@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}400 Bad Request{% endblock %}
+
+{% block content %}
+<div class="container text-center mt-5">
+    <div>
+        <img src="{% static 'images/school_logo.png' %}" alt="school logo" class="img-fluid">
+    </div>
+
+  <h1 class="display-4">400</h1>
+  <p class="lead">Bad request. Please check your input and try again.</p>
+  <a href="{% url 'home' %}" class="btn btn-primary">Return Home</a>
+</div>
+{% endblock %}

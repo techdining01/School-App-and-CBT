@@ -1,10 +1,15 @@
 {% extends "base.html" %}
 {% load static %}
-
+{% block title %} SuperAdmin Dashboard {% endblock title %}
 {% block content %}
 <div class="container mt-4">
-    <h1 class="mb-3">🛠️ Admin Dashboard</h1>
-
+    <div class="d-flex justify-content-between align-items-center mt-3">
+        <h1 class="fw-bold mb-3"> 👑👑👑 SuperAdmin Dashboard</h1>
+          <nav class="d-flex gap-3">
+            <a class="btn btn-success" style="width: 80px; height: 40px;font-size: .95rem;" href="{% url 'user_approval_list' %}">Approval</a>
+          </nav>
+        </div>
+      <br>
        <!-- Stats -->
     <div class="row mb-4">
         <div class="col-md-3">
@@ -26,16 +31,50 @@
         <div class="col-md-3">
             <div class="card text-center">
                 <div class="card-body">
-                    <h5>📚 Teachers</h5>
-                    <p>{{ teachers }}</p>
+                    <h5> 🛠️ Admins</h5>
+                    <p>{{ total_admins }}</p>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
             <div class="card text-center">
                 <div class="card-body">
-                    <h5>🎓 Students</h5>
+                    <h5> 🧑🏿‍🏫 Teachers</h5>
+                    <p>{{ teachers }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5>🧑🏼‍🎓 Students</h5>
                     <p>{{ students }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5> 📚 Quizzes</h5>
+                    <p>{{ total_quizzes }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5> 📖 Subjects</h5>
+                    <p>{{ total_subjects }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5>🏫 Classes</h5>
+                    <p>{{ total_classes }}</p>
                 </div>
             </div>
         </div>

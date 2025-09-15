@@ -60,16 +60,25 @@ class Choice(models.Model):
 
 
 class StudentQuizAttempt(models.Model):
-    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name="quiz_attempts")
-    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name="attempts")
-    started_at = models.DateTimeField(default=timezone.now)
-    completed_at = models.DateTimeField(null=True, blank=True)
-    score = models.FloatField(default=0)
-    total_marks = models.PositiveIntegerField(default=0)
-    is_submitted = models.BooleanField(default=False)
+    student = models.ForeignKey(User, on_delete=models.CASCADE)
+    quiz = models.ForeignKey("Quiz", on_delete=models.CASCADE)
+    started_at = models.DateTimeField(auto_now_add=True)
+    end_time = models.DateTimeField(null=True, blank=True)  # quiz expiry
+    completed = models.BooleanField(default=False)  # submitted or not
+    retake_allowed = models.BooleanField(default=False)  # admin override
+    retake_count = models.PositiveIntegerField(default=0)  # how many times student retook
+    score = models.FloatField(default=0.0)  # total score for the attempt
+
+    def can_resume(self):
+        """Allow resume if attempt still within time and not submitted."""
+        return not self.completed and (self.end_time is None or timezone.now() < self.end_time)
+
+    def can_retake(self):
+        """Allow retake if admin has granted it."""
+        return self.retake_allowed
 
     def __str__(self):
-        return f"{self.student} - {self.quiz}"
+        return f"{self.student} - {self.quiz} (Retakes: {self.retake_count})"
 
 
 class ObjectiveAnswer(models.Model):
@@ -86,6 +95,7 @@ class SubjectiveAnswer(models.Model):
     question = models.ForeignKey(Question, on_delete=models.CASCADE)
     answer_text = models.TextField()
     marks_awarded = models.FloatField(null=True, blank=True)  # null until teacher marks
+    graded = models.BooleanField(default=False)
     graded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="graded_subjectives")
     graded_at = models.DateTimeField(null=True, blank=True)
 

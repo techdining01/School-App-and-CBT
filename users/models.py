@@ -3,7 +3,7 @@ from django.db import models
 from django.conf import settings
 from django.utils import timezone
 from PIL import Image
-from exams.models import Class
+from exams.models import Class, Subject
 
 
 
@@ -33,7 +33,7 @@ class User(AbstractUser):
     profile_picture = models.ImageField(upload_to='profiles/', default='profiles/default_profile.png', null=True, blank=True)
        # NEW FIELDS for teachers/admins
     qualification = models.CharField(max_length=200, blank=True, null=True)
-    subject_assigned = models.CharField(max_length=100, blank=True, null=True)
+    subject_assigned = models.ForeignKey(Subject, on_delete=models.CASCADE, null=True, blank=True)
     years_of_experience = models.PositiveIntegerField(blank=True, null=True)
     next_of_kin = models.CharField(max_length=150, blank=True, null=True)
     next_of_kin_phone = models.CharField(max_length=15, blank=True, null=True)

@@ -5,22 +5,26 @@
 <div class="container mt-4">
     <h2 class="mb-3">🎓 Student Dashboard</h2>
 
-    <!-- Notifications -->
-    <div class="mb-4">
-        <h5>Notifications 
-            <span class="badge bg-danger">{{ unread_notifications_count }}</span>
-        </h5>
-        <ul class="list-group">
-            {% for note in notifications %}
-                <li class="list-group-item {% if not note.is_read %}fw-bold{% endif %}">
-                    {{ note.message }}
-                    <small class="text-muted float-end">{{ note.created_at|date:"M d, Y H:i" }}</small>
+<!-- Notifications -->
+    <h5>📩 Notifications</h5>
+        <ul class="list-group mb-3">
+            {% for notif in notifications %}
+                <li class="list-group-item d-flex justify-content-between align-items-center
+                        {% if not notif.is_read %}list-group-item-warning{% endif %}">
+                {{ notif.message }}
+                <small class="text-muted">{{ notif.created_at|date:"M d, H:i" }}</small>
+
+                {% if not notif.is_read %}
+                    <a href="{% url 'mark_notification_read' notif.id %}" 
+                    class="btn btn-sm btn-outline-success">Mark as read</a>
+                {% endif %}
                 </li>
             {% empty %}
-                <li class="list-group-item">No notifications</li>
+                <li class="list-group-item">No notifications yet.</li>
             {% endfor %}
         </ul>
     </div>
+
 
     <!-- Summary -->
     <div class="card mb-4">

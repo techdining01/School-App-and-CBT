@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% block title %}Manage Quizzes{% endblock %}
+{% block content %}
+{%csrf_token%}
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mt-3">
+      <h2 class='fw-bold mb-3'> Manage Quizzes </h2>
+          <nav class="d-flex gap-3">
+            <a class="btn btn-dark" style="width: 50px; height: 30px;font-size: 10px;" href="{% url 'dashboard' %}">Back</a>
+          </nav>
+        </div>
+      <br>
+  
+  <table class="table table-striped">
+    <thead>
+      <tr><th>Title</th><th>Subject</th><th>Start</th><th>End</th><th>Published</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for q in quizzes %}
+      <tr id="quiz-row-{{ q.id }}">
+        <td>{{ q.title }}</td>
+        <td>{{ q.subject.name }} ({{ q.subject.school_class.name }})</td>
+        <td>{{ q.start_time }}</td>
+        <td>{{ q.end_time }}</td>
+        <td><span id="pub-{{ q.id }}">{{ q.is_published|yesno:"Yes,No" }}</span></td>
+        <td>
+          <a href="{% url 'manage_quizzes_page'  %}" class="btn btn-sm btn-outline-secondary">View</a>
+          <button class="btn btn-sm btn-outline-primary publish-btn" data-id="{{ q.id }}">{{ q.is_published|yesno:"Unpublish,Publish" }}</button>
+          <button class="btn btn-sm btn-danger delete-btn" data-id="{{ q.id }}">Delete</button>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6">No quizzes yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+(function(){
+  const csrftoken = document.querySelector('input[name=csrfmiddlewaretoken]') ? document.querySelector('input[name=csrfmiddlewaretoken]').value : null;
+  document.querySelectorAll('.publish-btn').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      const id = btn.dataset.id;
+      try {
+        const res = await fetch(`/exams/api/${id}/publish_toggle/`, {
+          method: 'POST',
+          headers: {'X-CSRFToken': csrftoken}
+        });
+        const d = await res.json();
+        if (d.ok) {
+          document.getElementById('pub-'+id).textContent = d.is_published ? 'Yes' : 'No';
+          btn.textContent = d.is_published ? 'Unpublish' : 'Publish';
+        } else alert(d.error || 'Failed');
+      } catch (err){ console.error(err); alert('Network error'); }
+    });
+  });
+
+  document.querySelectorAll('.delete-btn').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if (!confirm('Delete this quiz?')) return;
+      const id = btn.dataset.id;
+      try {
+        const res = await fetch(`/exams/api/${id}/delete/`, { method: 'POST', headers: {'X-CSRFToken': csrftoken} });
+        const d = await res.json();
+        if (d.ok) {
+          document.getElementById('quiz-row-'+id).remove();
+        } else alert(d.error || 'Failed');
+      } catch (err){ console.error(err); alert('Network error'); }
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}403 Forbidden{% endblock %}
+
+
+{% block content %}
+<div class="container text-center mt-5">
+    <div>
+        <img src="{% static 'images/school_logo.png' %}" alt="school logo" class="img-fluid">
+    </div>
+  <h1 class="display-4">403</h1>
+  <p class="lead">Forbidden. You don't have permission to access this page.</p>
+  <a href="{% url 'home' %}" class="btn btn-primary">Return Home</a>
+</div>
+{% endblock %}

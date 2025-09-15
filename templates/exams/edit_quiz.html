@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h2>Edit Quiz</h2>
+  <form id="csrf-form" style="display:none;">{% csrf_token %}</form>
+
+  <div id="alert-area"></div>
+
+  <div id="builder-area">
+    <!-- reuse same fields as create_quiz.html -->
+    <div class="mb-2">
+      <input id="quiz-title" class="form-control" placeholder="Quiz title">
+    </div>
+    <div class="mb-2 row">
+      <div class="col">
+        <select id="quiz-subject" class="form-select">
+          <option value="">-- select subject --</option>
+          {% for s in subjects %}
+            <option value="{{ s.id }}">{{ s.name }} ({{ s.school_class.name }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col">
+        <input id="quiz-start" type="datetime-local" class="form-control">
+      </div>
+      <div class="col">
+        <input id="quiz-end" type="datetime-local" class="form-control">
+      </div>
+    </div>
+    <div class="mb-2 row">
+      <div class="col">
+        <input id="quiz-duration" type="number" class="form-control" value="30">
+      </div>
+      <div class="col">
+        <select id="quiz-publish" class="form-select">
+          <option value="false">No</option>
+          <option value="true">Yes</option>
+        </select>
+      </div>
+    </div>
+
+    <hr>
+    <h6>Questions</h6>
+    <div id="questions-container"></div>
+    <button id="add-question-btn" class="btn btn-outline-primary mt-2">+ Add Question</button>
+
+    <div class="mt-3">
+      <button id="save-quiz-btn" class="btn btn-success">Save via AJAX</button>
+      <a href="{% url 'manage_quizzes_page' %}" class="btn btn-link">Cancel</a>
+    </div>
+  </div>
+</div>
+
+<script>
+(async function(){
+  const quizId = {{ quiz.id }};
+  const csrftoken = document.querySelector('#csrf-form input[name=csrfmiddlewaretoken]').value;
+
+  // reuse builder helper functions (addQuestionBlock, addChoice) - for brevity, copy same helper code from create_quiz.html
+  // For brevity in this message, I'll assume you copied the same functions (addQuestionBlock, addChoice, renderQuestionBlockFromData)
+  // Now fetch quiz JSON and prefill
+  async function fetchQuizAndPrefill() {
+    const res = await fetch("{% url 'quiz_json' quiz.id %}");
+    const data = await res.json();
+    if (!data.ok) { alert(data.error || 'Failed to load quiz'); return; }
+    const q = data.quiz;
+    document.getElementById('quiz-title').value = q.title;
+    document.getElementById('quiz-subject').value = q.subject_id;
+    document.getElementById('quiz-start').value = q.start_time;
+    document.getElementById('quiz-end').value = q.end_time;
+    document.getElementById('quiz-duration').value = q.duration_minutes;
+    document.getElementById('quiz-publish').value = q.is_published ? 'true' : 'false';
+
+    // clear any default questions then add from q.questions
+    document.getElementById('questions-container').innerHTML = '';
+    for (const ques of q.questions) {
+      const block = addQuestionBlock(); // returns the created block element
+      // fill values
+      block.querySelector('.q-text').value = ques.text;
+      block.querySelector('.q-type').value = ques.question_type;
+      block.querySelector('.q-marks').value = ques.marks;
+      if (ques.question_type === 'objective') {
+        // clear default choices
+        const list = block.querySelector('.choices-list');
+        list.innerHTML = '';
+        for (const ch of ques.choices) {
+          addChoice(block, ch.text, ch.is_correct);
+        }
+      } else {
+        block.querySelector('.choices-section').style.display = 'none';
+      }
+    }
+  }
+
+  // wire save button
+  document.getElementById('save-quiz-btn').addEventListener('click', async (e)=>{
+    e.preventDefault();
+    // collect same as create_quiz code
+    // ... copy collect logic from create_quiz.js, then POST to edit endpoint:
+    const title = document.getElementById('quiz-title').value.trim();
+    const subject_id = document.getElementById('quiz-subject').value;
+    const start_time = document.getElementById('quiz-start').value;
+    const end_time = document.getElementById('quiz-end').value;
+    const duration = document.getElementById('quiz-duration').value;
+    const is_published = document.getElementById('quiz-publish').value === 'true';
+    // collect questions...
+    const qnodes = document.querySelectorAll('#questions-container > .card');
+    const questions = [];
+    for (const qn of qnodes) {
+      const text = qn.querySelector('.q-text').value.trim();
+      const qtype = qn.querySelector('.q-type').value;
+      const marks = qn.querySelector('.q-marks').value || 1;
+      const qobj = { text, question_type: qtype, marks: marks };
+      if (qtype === 'objective') {
+        const choices = [];
+        const choiceNodes = qn.querySelectorAll('.choices-list .input-group');
+        for (const c of choiceNodes) {
+          const ctext = c.querySelector('.choice-text').value || '';
+          const cis = c.querySelector('.choice-correct').checked;
+          choices.push({ text: ctext, is_correct: cis });
+        }
+        qobj.choices = choices;
+      }
+      questions.push(qobj);
+    }
+    const payload = { title, subject_id, start_time, end_time, duration_minutes: duration, is_published, questions };
+    try {
+      const res = await fetch(`/exams/api/edit/${quizId}/`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-CSRFToken': csrftoken},
+        body: JSON.stringify(payload)
+      });
+      const d = await res.json();
+      if (!d.ok) { alert(d.error || 'Failed'); } else { alert('Saved'); window.location.href = "{% url 'manage_quizzes_page' %}"; }
+    } catch (err) { console.error(err); alert('Network error'); }
+  });
+
+  // load initial
+  await fetchQuizAndPrefill();
+
+  // Note: copy or include helper functions addQuestionBlock/addChoice used above
+})();
+</script>
+<script>
+(function(){
+  const csrftoken = document.querySelector('#csrf-form input[name=csrfmiddlewaretoken]').value;
+
+  // question builder (similar to earlier example)
+  let qIndex = 0;
+  function addQuestionBlock() {
+    const idx = qIndex++;
+    const container = document.createElement('div');
+    container.className = 'card mb-2 p-2';
+    container.dataset.idx = idx;
+    container.innerHTML = `
+      <div class="d-flex justify-content-between">
+        <strong>Question ${idx+1}</strong>
+        <button class="btn btn-sm btn-danger remove-q">Remove</button>
+      </div>
+      <textarea class="form-control q-text mb-2" placeholder="Question text"></textarea>
+      <div class="row mb-2">
+        <div class="col-6">
+          <select class="form-select q-type">
+            <option value="objective">Objective</option>
+            <option value="subjective">Subjective</option>
+          </select>
+        </div>
+        <div class="col-2">
+          <input type="number" class="form-control q-marks" value="1">
+        </div>
+      </div>
+      <div class="choices-section">
+        <div class="choices-list"></div>
+        <button class="btn btn-sm btn-outline-secondary add-choice">+ Add Choice</button>
+      </div>
+    `;
+    container.querySelector('.remove-q').addEventListener('click', ()=> container.remove());
+    container.querySelector('.add-choice').addEventListener('click', (e)=> {
+      e.preventDefault();
+      addChoice(container);
+    });
+    container.querySelector('.q-type').addEventListener('change', (ev)=>{
+      container.querySelector('.choices-section').style.display = ev.target.value === 'objective' ? '' : 'none';
+    });
+    addChoice(container); addChoice(container);
+    document.getElementById('questions-container').appendChild(container);
+  }
+  function addChoice(qcontainer, text='', checked=false) {
+    const list = qcontainer.querySelector('.choices-list');
+    const div = document.createElement('div');
+    div.className = 'input-group mb-1';
+    div.innerHTML = `<input class="form-control choice-text" value="${text}"><span class="input-group-text"><input type="checkbox" class="choice-correct" ${checked ? 'checked' : ''}></span><button class="btn btn-danger btn-sm remove-choice">✖</button>`;
+    div.querySelector('.remove-choice').addEventListener('click', ()=> div.remove());
+    list.appendChild(div);
+  }
+
+  document.getElementById('add-question-btn').addEventListener('click', (e)=> { e.preventDefault(); addQuestionBlock(); });
+  // add one default question
+  addQuestionBlock();
+})();
+</script>
+{% endblock %}

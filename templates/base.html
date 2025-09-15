@@ -22,11 +22,11 @@
     <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm px-4">
         <a class="navbar-brand d-flex align-items-center" href="#">
-            <img src="/static/images/school_logo.png" alt="School Logo" width="40" height="40" class="me-2">
+            <img src="/static/images/school_logo.png" alt="School Logo" width="50" height="50" class="me-2">
             <span class="fw-bold">AL MUMEEN STANDARD ACADEMY</span>
         </a>
 
-        <div class="ms-auto d-flex align-items-center">
+        <div class="ms-auto d-flex align-items-center gap-2">
             {% if user.is_authenticated %}
                 <span class="me-3 fw-semibold">{{ user.first_name }}</span>
                 {% if user.profile_picture %}
@@ -44,7 +44,7 @@
             {% endif %}
         </div>
     </nav>
-
+{% comment %} 
     <!-- Messages -->
     {% if messages %}
     <div class="container mt-3">
@@ -59,7 +59,7 @@
             </div>
         {% endfor %}
     </div>
-    {% endif %}
+    {% endif %} {% endcomment %}
 
     <!-- Page Content -->
     <main class="container mt-4">

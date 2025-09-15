@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h3>{{ quiz.title }}</h3>
+  <div id="timer" class="mb-2 fw-bold text-danger"></div>
+
+  <div id="questions-area"></div>
+
+  <div class="mt-3">
+    <button id="submit-btn" class="btn btn-success">Submit</button>
+  </div>
+</div>
+
+<form id="csrf-form" style="display:none;">{% csrf_token %}</form>
+
+<script>
+(async function(){
+  const csrftoken = document.querySelector('#csrf-form input[name=csrfmiddlewaretoken]').value;
+
+  // 1) start attempt (resume if exists)
+  const startResp = await fetch("{% url 'start_attempt' quiz.id %}");
+  const startData = await startResp.json();
+  if (!startData.ok) { alert(startData.error || 'Cannot start'); return; }
+  const attemptId = startData.attempt_id;
+  const endTime = new Date(startData.end_time);
+  // build UI: fetch quiz details (we can embed server-rendered questions to avoid extra fetch)
+  const questions = {{ questions_json|safe }}; // server should pass questions JSON into template context
+  const qarea = document.getElementById('questions-area');
+
+  // Render questions
+  for (const q of questions) {
+    const div = document.createElement('div');
+    div.className = 'card mb-2 p-2';
+    div.innerHTML = `<div><strong>${q.text}</strong> <span class="small text-muted">(${q.question_type})</span></div>`;
+    if (q.question_type === 'objective') {
+      for (const ch of q.choices) {
+        const id = `q_${q.id}_c_${ch.id}`;
+        div.innerHTML += `<div><label><input type="radio" name="q_${q.id}" value="${ch.id}" data-qid="${q.id}"> ${ch.text}</label></div>`;
+      }
+    } else {
+      div.innerHTML += `<textarea data-qid="${q.id}" class="form-control subj-text" rows="4"></textarea>`;
+    }
+    qarea.appendChild(div);
+  }
+
+  // Timer
+  function updateTimer() {
+    const now = new Date();
+    let diff = endTime - now;
+    if (diff <= 0) {
+      document.getElementById('timer').textContent = 'Time up — auto-submitting...';
+      clearInterval(timerInterval);
+      submitAttempt(true);
+      return;
+    }
+    const mins = Math.floor(diff / 60000);
+    const secs = Math.floor((diff % 60000) / 1000);
+    document.getElementById('timer').textContent = `${mins}m ${secs}s`;
+  }
+  updateTimer();
+  const timerInterval = setInterval(updateTimer, 1000);
+
+  // Autosave every 10s
+  async function autosave() {
+    const answers = [];
+    // objective radios
+    document.querySelectorAll('[name^="q_"]').forEach(input=>{
+      if (input.checked) {
+        answers.push({question_id: parseInt(input.dataset.qid), choice_id: parseInt(input.value)});
+      }
+    });
+    // subjectives
+    document.querySelectorAll('.subj-text').forEach(t=>{
+      answers.push({question_id: parseInt(t.dataset.qid), text: t.value});
+    });
+    try {
+      await fetch(`/exams/api/attempts/${attemptId}/autosave/`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-CSRFToken': csrftoken},
+        body: JSON.stringify({answers})
+      });
+      // show a tiny ephemeral message (tailwind style)
+      const a = document.getElementById('autosave-pulse');
+      if (!a) {
+        const el = document.createElement('div'); el.id='autosave-pulse'; el.style.position='fixed'; el.style.right='20px'; el.style.bottom='20px'; el.className='bg-green-100 p-2 rounded shadow'; el.textContent='Autosaved'; document.body.appendChild(el);
+        setTimeout(()=> el.remove(), 900);
+      }
+    } catch(e) { console.error('autosave failed', e); }
+  }
+  const autosaveInterval = setInterval(autosave, 10000);
+
+  // submit
+  async function submitAttempt(isAuto=false) {
+    clearInterval(autosaveInterval);
+    clearInterval(timerInterval);
+    try {
+      const res = await fetch(`/exams/api/attempts/${attemptId}/submit/`, {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrftoken}
+      });
+      const d = await res.json();
+      if (!d.ok) alert(d.error || 'Submit failed'); else {
+        alert(d.message || 'Submitted');
+        window.location.href = "{% url 'student_dashboard' %}";
+      }
+    } catch (err) { console.error(err); alert('Network error'); }
+  }
+
+  document.getElementById('submit-btn').addEventListener('click', (e)=>{
+    if (!confirm('Submit quiz?')) return;
+    submitAttempt(false);
+  });
+
+  // initial autosave shortly after load to persist any default changes
+  setTimeout(autosave, 2000);
+
+})();
+</script>
+<script>
+    const quizQuestions = JSON.parse('{{ questions_json|escapejs }}');
+    console.log("Quiz Questions:", quizQuestions);
+    // You can now loop through quizQuestions in JS and render them dynamically
+</script>
+
+{% endblock %}

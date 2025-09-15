@@ -1,6 +1,6 @@
 from django.contrib import admin
 from .models import Class, Subject, Quiz, Question, Choice, StudentQuizAttempt, Answer
-
+from .models import StudentQuizAttempt
 
 class ChoiceInline(admin.TabularInline):
     model = Choice
@@ -26,5 +26,17 @@ admin.site.register(Subject)
 admin.site.register(Quiz, QuizAdmin)
 admin.site.register(Question, QuestionAdmin)
 admin.site.register(Choice)
-admin.site.register(StudentQuizAttempt)
+# admin.site.register(StudentQuizAttempt)
 admin.site.register(Answer, AnswerAdmin)
+
+
+@admin.register(StudentQuizAttempt)
+class StudentQuizAttemptAdmin(admin.ModelAdmin):
+    list_display = ("student", "quiz", "completed", "retake_allowed", "retake_count")
+    list_filter = ("completed", "retake_allowed")
+    actions = ["allow_retake"]
+
+    def allow_retake(self, request, queryset):
+        updated = queryset.update(retake_allowed=True)
+        self.message_user(request, f"{updated} attempt(s) granted retake")
+    allow_retake.short_description = "Grant retake to selected students"

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}404 Not Found{% endblock %}
+
+{% block content %}
+<div class="container text-center mt-5">
+    <div>
+        <img src="{% static 'images/school_logo.png' %}" alt="school logo" class="img-fluid">
+    </div>
+    <h1 class="display-4">404</h1>
+  <p class="lead">Oops! Page not found.</p>
+  <a href="{% url 'home' %}" class="btn btn-primary">Return Home</a>
+</div>
+{% endblock %}

@@ -1,152 +1,148 @@
 {% extends "base.html" %}
 {% block title %}Create Quiz{% endblock %}
 {% block content %}
-{% csrf_token %}
 <div class="container mt-4">
-  <h2>Create Quiz</h2>
+  <h2>Create Quiz (Manual or Excel)</h2>
 
-  <div id="alert-area"></div>
+  <!-- Hidden CSRF token form so JS can pick it -->
+  <form id="csrf-form" style="display:none;">{% csrf_token %}</form>
 
-  <div class="card mb-3">
-    <div class="card-body">
-      <div class="mb-3">
-        <label class="form-label">Title</label>
-        <input id="quiz-title" class="form-control" placeholder="Quiz title">
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label">Subject</label>
-        <select id="quiz-subject" class="form-select">
-          {% for s in subjects %}
-            <option value="{{ s.id }}">{{ s.name }} ({{ s.school_class.name }})</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="mb-3 row">
-        <div class="col-md-4">
-          <label class="form-label">Duration (minutes)</label>
-          <input id="quiz-duration" type="number" class="form-control" value="30">
+  <div class="row">
+    <div class="col-md-7">
+      <div class="card mb-3 p-3">
+        <h5>Manual Builder</h5>
+        <div class="mb-2">
+          <input id="quiz-title" class="form-control" placeholder="Quiz title">
         </div>
-        <div class="col-md-4">
-          <label class="form-label">Publish now?</label>
-          <select id="quiz-publish" class="form-select">
-            <option value="true">Yes</option>
-            <option value="false" selected>No</option>
-          </select>
+        <div class="mb-2 row">
+          <div class="col">
+            <select id="quiz-subject" class="form-select">
+              <option value="">-- select subject --</option>
+              {% for s in subjects %}
+              <option value="{{ s.id }}">{{ s.name }} ({{ s.school_class.name }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col">
+            <input id="quiz-start" type="datetime-local" class="form-control" placeholder="Start time">
+          </div>
+          <div class="col">
+            <input id="quiz-end" type="datetime-local" class="form-control" placeholder="End time">
+          </div>
+        </div>
+        <div class="mb-2 row">
+          <div class="col">
+            <input id="quiz-duration" type="number" class="form-control" value="30">
+          </div>
+          <div class="col">
+            <select id="quiz-publish" class="form-select">
+              <option value="false" selected>No</option>
+              <option value="true">Yes (publish)</option>
+            </select>
+          </div>
+        </div>
+
+        <hr>
+        <h6>Questions</h6>
+        <div id="questions-container"></div>
+        <button id="add-question-btn" class="btn btn-outline-primary mt-2">+ Add Question</button>
+
+        <div class="mt-3">
+          <button id="submit-quiz-btn" class="btn btn-success">Create via AJAX</button>
         </div>
       </div>
+    </div>
 
-      <hr>
-
-      <h5>Questions</h5>
-      <div id="questions-container"></div>
-
-      <div class="mt-3">
-        <button id="add-question-btn" class="btn btn-outline-primary">+ Add Question</button>
+    <div class="col-md-5">
+      <div class="card p-3">
+        <h5>Import from Excel</h5>
+        <p class="small text-muted">Use the Excel template: metadata rows (quiz_title, class_name, subject_name, start_time, end_time, duration_minutes, is_published) then header row 'question_text' etc. See docs above.</p>
+        <form id="excel-form" enctype="multipart/form-data">
+          {% csrf_token %}
+          <div class="mb-2">
+            <input type="file" name="excel_file" id="excel_file" class="form-control" accept=".xlsx,.xls">
+          </div>
+          <button id="upload-excel-btn" class="btn btn-primary">Upload & Import</button>
+          <div id="excel-result" class="mt-2"></div>
+        </form>
       </div>
-
-      <div class="mt-4">
-        <button id="submit-quiz-btn" class="btn btn-success">Create Quiz</button>
-        <a href="{% url 'dashboard' %}" class="btn btn-link">Cancel</a>
-      </div>
+      <a href="{% url 'download_excel_template' %}" class="btn btn-outline-secondary">Download Excel Template</a>
     </div>
   </div>
 </div>
 
-<!-- JS: dynamic question builder -->
+<!-- include JS: reuse earlier dynamic builder code but simplified -->
 <script>
-(function() {
+(function(){
+  const csrftoken = document.querySelector('#csrf-form input[name=csrfmiddlewaretoken]').value;
+
+  // question builder (similar to earlier example)
   let qIndex = 0;
-
-  function showAlert(msg, kind='success') {
-    const area = document.getElementById('alert-area');
-    area.innerHTML = `<div class="alert ${kind === 'success' ? 'bg-green-100 text-green-800 border border-green-400' : 'bg-red-100 text-red-800 border border-red-400'} p-3 rounded mb-2">${msg}</div>`;
-    setTimeout(()=> area.innerHTML = '', 3000);
-  }
-
-  function newQuestionBlock() {
+  function addQuestionBlock() {
     const idx = qIndex++;
     const container = document.createElement('div');
-    container.className = 'card mb-2 p-3';
-    container.dataset.qindex = idx;
+    container.className = 'card mb-2 p-2';
+    container.dataset.idx = idx;
     container.innerHTML = `
-      <div class="mb-2 d-flex justify-content-between">
-        <strong>Question <span class="qnum">${idx+1}</span></strong>
-        <button class="btn btn-sm btn-danger remove-question">Remove</button>
+      <div class="d-flex justify-content-between">
+        <strong>Question ${idx+1}</strong>
+        <button class="btn btn-sm btn-danger remove-q">Remove</button>
       </div>
-      <div class="mb-2">
-        <textarea class="form-control q-text" placeholder="Question text"></textarea>
-      </div>
-      <div class="mb-2 row">
-        <div class="col-md-4">
+      <textarea class="form-control q-text mb-2" placeholder="Question text"></textarea>
+      <div class="row mb-2">
+        <div class="col-6">
           <select class="form-select q-type">
-            <option value="objective">Objective (auto-graded)</option>
-            <option value="subjective">Subjective (manual)</option>
+            <option value="objective">Objective</option>
+            <option value="subjective">Subjective</option>
           </select>
         </div>
-        <div class="col-md-2">
-          <input type="number" class="form-control q-marks" value="1" min="0" placeholder="Marks">
+        <div class="col-2">
+          <input type="number" class="form-control q-marks" value="1">
         </div>
       </div>
-      <div class="choices-section mb-2">
-        <h6>Choices</h6>
+      <div class="choices-section">
         <div class="choices-list"></div>
         <button class="btn btn-sm btn-outline-secondary add-choice">+ Add Choice</button>
       </div>
     `;
-
-    // handlers
-    container.querySelector('.remove-question').addEventListener('click', () => container.remove());
-    container.querySelector('.add-choice').addEventListener('click', (ev) => {
-      ev.preventDefault();
+    container.querySelector('.remove-q').addEventListener('click', ()=> container.remove());
+    container.querySelector('.add-choice').addEventListener('click', (e)=> {
+      e.preventDefault();
       addChoice(container);
     });
-    // hide/show choices if subjective
-    container.querySelector('.q-type').addEventListener('change', (e) => {
-      if (e.target.value === 'subjective') {
-        container.querySelector('.choices-section').style.display = 'none';
-      } else {
-        container.querySelector('.choices-section').style.display = '';
-      }
+    container.querySelector('.q-type').addEventListener('change', (ev)=>{
+      container.querySelector('.choices-section').style.display = ev.target.value === 'objective' ? '' : 'none';
     });
-
-    // default: add two choices for objective
     addChoice(container); addChoice(container);
-
-    return container;
+    document.getElementById('questions-container').appendChild(container);
   }
-
-  function addChoice(questionContainer, text='', isCorrect=false) {
-    const list = questionContainer.querySelector('.choices-list');
-    const choiceIdx = list.children.length;
+  function addChoice(qcontainer, text='', checked=false) {
+    const list = qcontainer.querySelector('.choices-list');
     const div = document.createElement('div');
-    div.className = 'input-group mb-2';
-    div.innerHTML = `
-      <input type="text" class="form-control choice-text" placeholder="Choice text" value="${text}">
-      <span class="input-group-text">
-        <input type="checkbox" class="choice-correct" ${isCorrect ? 'checked' : ''}/>
-      </span>
-      <button class="btn btn-danger btn-sm remove-choice">✖</button>
-    `;
-    div.querySelector('.remove-choice').addEventListener('click', () => div.remove());
+    div.className = 'input-group mb-1';
+    div.innerHTML = `<input class="form-control choice-text" value="${text}"><span class="input-group-text"><input type="checkbox" class="choice-correct" ${checked ? 'checked' : ''}></span><button class="btn btn-danger btn-sm remove-choice">✖</button>`;
+    div.querySelector('.remove-choice').addEventListener('click', ()=> div.remove());
     list.appendChild(div);
   }
 
-  document.getElementById('add-question-btn').addEventListener('click', (e) => {
-    e.preventDefault();
-    const q = newQuestionBlock();
-    document.getElementById('questions-container').appendChild(q);
-  });
+  document.getElementById('add-question-btn').addEventListener('click', (e)=> { e.preventDefault(); addQuestionBlock(); });
+  // add one default question
+  addQuestionBlock();
 
+  // submit quiz via AJAX
   document.getElementById('submit-quiz-btn').addEventListener('click', async (e) => {
     e.preventDefault();
     const title = document.getElementById('quiz-title').value.trim();
     const subject_id = document.getElementById('quiz-subject').value;
-    const duration = parseInt(document.getElementById('quiz-duration').value) || 30;
+    const start_time = document.getElementById('quiz-start').value;
+    const end_time = document.getElementById('quiz-end').value;
+    const duration = document.getElementById('quiz-duration').value;
     const is_published = document.getElementById('quiz-publish').value === 'true';
 
-    if (!title) { showAlert('Quiz title is required', 'error'); return; }
+    if (!title || !subject_id || !start_time || !end_time) {
+      alert('Provide title, subject, start and end time.');
+      return;
+    }
 
     // collect questions
     const qnodes = document.querySelectorAll('#questions-container > .card');
@@ -154,22 +150,14 @@
     for (const qn of qnodes) {
       const text = qn.querySelector('.q-text').value.trim();
       const qtype = qn.querySelector('.q-type').value;
-      const marks = parseFloat(qn.querySelector('.q-marks').value) || 1;
-
-      if (!text) { showAlert('All questions must have text', 'error'); return; }
-
-      const qobj = { text, question_type: qtype, marks };
-
+      const marks = qn.querySelector('.q-marks').value || 1;
+      const qobj = { text, question_type: qtype, marks: marks };
       if (qtype === 'objective') {
         const choices = [];
         const choiceNodes = qn.querySelectorAll('.choices-list .input-group');
-        if (choiceNodes.length === 0) {
-          showAlert('Objective questions require at least one choice', 'error'); return;
-        }
         for (const c of choiceNodes) {
-          const ctext = c.querySelector('.choice-text').value.trim();
+          const ctext = c.querySelector('.choice-text').value || '';
           const cis = c.querySelector('.choice-correct').checked;
-          if (!ctext) { showAlert('Choice text cannot be empty', 'error'); return; }
           choices.push({ text: ctext, is_correct: cis });
         }
         qobj.choices = choices;
@@ -177,42 +165,54 @@
       questions.push(qobj);
     }
 
-    // payload
-    const payload = {
-      title,
-      subject_id: subject_id,
-      duration_minutes: duration,
-      is_published: is_published,
-      questions
-    };
-
-    // send via AJAX (JSON)
+    const payload = { title, subject_id, start_time, end_time, duration_minutes: duration, is_published, questions };
     try {
-      const csrftoken = document.querySelector('[name=csrfmiddlewaretoken]').value;
       const res = await fetch("{% url 'create_quiz_ajax' %}", {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': csrftoken,
-        },
+        headers: {'Content-Type': 'application/json','X-CSRFToken': csrftoken},
         body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (!data.ok) {
-        showAlert(data.error || 'Failed to create quiz', 'error');
+        alert('Error: ' + (data.error || 'Failed'));
       } else {
-        showAlert('Quiz created successfully!', 'success');
-        // optionally redirect to manage quizzes
-        setTimeout(()=> window.location.href = `{% url 'manage_quizzes' %}`, 900);
+        alert('Quiz created successfully!');
+        window.location.href = "{% url 'manage_quizzes_page' %}";
       }
     } catch (err) {
       console.error(err);
-      showAlert('Network error when creating quiz', 'error');
+      alert('Network error');
     }
   });
 
-  // add a first question by default
-  document.getElementById('add-question-btn').click();
+  // Excel upload
+  document.getElementById('excel-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fileInput = document.getElementById('excel_file');
+    if (!fileInput.files.length) { alert('Select an Excel file'); return; }
+    const fd = new FormData();
+    fd.append('excel_file', fileInput.files[0]);
+
+    try {
+      const res = await fetch("{% url 'import_quiz_excel' %}", {
+        method: 'POST',
+        body: fd,
+        headers: {'X-CSRFToken': csrftoken}
+      });
+      const data = await res.json();
+      const out = document.getElementById('excel-result');
+      if (!data.ok) {
+        out.innerHTML = `<div class="alert bg-red-100 p-2">${data.error}</div>`;
+      } else {
+        out.innerHTML = `<div class="alert bg-green-100 p-2">Imported quiz id ${data.quiz_id}</div>`;
+        setTimeout(()=> window.location.href = "{% url 'manage_quizzes_page' %}", 900);
+      }
+    } catch (err) {
+      console.error(err);
+      document.getElementById('excel-result').innerHTML = `<div class="alert bg-red-100 p-2">Upload failed</div>`;
+    }
+  });
+
 })();
 </script>
 {% endblock %}

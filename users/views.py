@@ -1,12 +1,16 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout, authenticate
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from .models import Notification
 from django.urls import reverse
 from .forms import TeacherAdminForm, EditUserRegistrationForm, EditTeacherAdminForm, UserRegistrationForm, loginForm
+from django.core.paginator import Paginator
+from django.http import JsonResponse, HttpResponseForbidden
+from django.views.decorators.http import require_POST   
+
 
 User = get_user_model()
 
@@ -37,10 +41,12 @@ def login_view(request):
             username = form.cleaned_data.get('username')
             password = form.cleaned_data.get('password')
             user = authenticate(username=username, password=password)
-            if user is not None:
+            if user.approved == True:
                 login(request, user)
-                messages.success(request, f"Welcome back, {user.username} 👋")
+                messages.success(request, f"Welcome back, {user.first_name} 👋")
                 return redirect('dashboard')
+            else:
+                messages.info(request, 'Ensure you have been approval by Admin')
         messages.error(request, "Invalid username or password.")
     else:
         form = loginForm()
@@ -62,8 +68,8 @@ def teacheradminprofile(request, user_id):
             profile = form.save(commit=False)
             profile.user = user
             profile.save()
-            messages.success(request, f'{user.role.title()} profile created successfully.')
-            return redirect('dashboard')
+            messages.success(request, f'{user.role.title()} profile created successfully. wait for approval')
+            return redirect('login')
     else:
         form = TeacherAdminForm()
 
@@ -81,10 +87,11 @@ def view_profile(request):
 
 
 @login_required
-def edit_profile(request):
+def edit_user(request, user_id):
     """Allow Student, Teacher, or Admin to update their profile."""
-    user = request.user
 
+    user = get_object_or_404(User, id=user_id)
+    
     # Select correct form by role
     if user.role == "student":
         form_class = EditUserRegistrationForm
@@ -108,6 +115,148 @@ def edit_profile(request):
         form = form_class(instance=user)
 
     return render(request, "users/edit_profile.html", {"form": form, "user": user})
+
+
+def create_user(request):
+    return redirect('signup')
+
+# def edit_user(request):
+#     return redirect('edit_profile')
+
+
+
+
+def is_admin_or_superadmin(user):
+    return user.role in ["admin", "superadmin"]
+
+
+@login_required
+@user_passes_test(is_admin_or_superadmin)
+def user_approval_list(request):
+    users = User.objects.exclude(role="superadmin")  # Exclude superadmins
+    return render(request, "users/user_approval_list.html", {"users": users})
+
+
+@login_required
+@user_passes_test(is_admin_or_superadmin)
+def approve_user(request, user_id):
+    user = get_object_or_404(User, id=user_id)
+    user.approved = True
+    user.save()
+    messages.success(request, f"{user.username} has been approved ✅.")
+    return redirect("user_approval_list")
+
+
+@login_required
+@user_passes_test(is_admin_or_superadmin)
+def reject_user(request, user_id):
+    user = get_object_or_404(User, id=user_id)
+    user.approved = False
+    user.delete()
+    messages.warning(request, f"{user.username} has been rejected ❌.")
+    return redirect("user_approval_list")
+
+
+@login_required
+@user_passes_test(is_admin_or_superadmin)
+def pending_user(request, user_id):
+    user = get_object_or_404(User, id=user_id)
+    user.approved = False
+    user.save()
+    messages.info(request, f"{user.username} is now pending ⏳.")
+    return redirect("user_approval_list")
+
+
+
+
+
+def is_admin(user):
+    return user.is_authenticated and (user.role in ['superadmin', 'admin'])
+
+
+@login_required
+@user_passes_test(is_admin)
+def manage_users(request):
+    """
+    Renders main Manage Users page with AJAX support.
+    """
+    return render(request, "users/manage_users.html")
+
+
+@login_required
+@user_passes_test(is_admin)
+def load_users(request):
+    """
+    Handles AJAX pagination and search
+    """
+    search = request.GET.get("search", "")
+    page = request.GET.get("page", 1)
+
+    users = User.objects.exclude(role="superadmin").order_by("-date_joined")
+
+    if search:
+        users = users.filter(username__icontains=search)
+
+    paginator = Paginator(users, 10)  
+    users_page = paginator.get_page(page)
+
+    data = {
+        "users": [
+            {
+                "id": u.id,
+                "username": u.username,
+                "email": u.email,
+                "role": u.role,
+                "date_joined": u.date_joined.strftime("%d-%m-%Y %H:%M"),
+            }
+            for u in users_page
+        ],
+        "has_next": users_page.has_next(),
+        "has_previous": users_page.has_previous(),
+        "num_pages": paginator.num_pages,
+        "current_page": users_page.number,
+    }
+    return JsonResponse(data)
+
+
+@login_required
+@user_passes_test(is_admin)
+@require_POST
+def delete_user(request, user_id):
+    """
+    Handles AJAX delete user
+    """
+    user = get_object_or_404(User, id=user_id)
+    if user.role == "superadmin":
+        return JsonResponse({"success": False, "message": "Cannot delete superadmin"})
+
+    user.delete()
+    return JsonResponse({"success": True})
+
+
+
+@login_required
+def dashboard_redirect(request):
+    if request.user.role == "superadmin":
+        return redirect("superadmin_dashboard")
+    elif request.user.role == "admin":
+        return redirect("admin_dashboard")
+    elif request.user.role == "teacher":
+        return redirect("teacher_dashboard")
+    elif request.user.role == "student":
+        return redirect("student_dashboard")
+    else:
+        messages.error(request, "Unknown role. Contact SuperAdmin.")
+        return redirect("login")
+
+
+@login_required
+def mark_notification_read(request, pk):
+    notif = get_object_or_404(Notification, pk=pk, recipient=request.user)
+    notif.is_read = True
+    notif.save()
+    messages.success(request, "Notification marked as read ✅")
+    return redirect("dashboard")
 
 
 @login_required
@@ -135,28 +284,4 @@ def send_broadcast(request):
             )
 
         messages.success(request, "Broadcast sent successfully ✅")
-    return redirect("dashboard")
-
-
-@login_required
-def dashboard_redirect(request):
-    if request.user.role == "superadmin":
-        return redirect("superadmin_dashboard")
-    elif request.user.role == "admin" or request.user.role == "superadmin":
-        return redirect("admin_dashboard")
-    elif request.user.role == "teacher":
-        return redirect("teacher_dashboard")
-    elif request.user.role == "student":
-        return redirect("student_dashboard")
-    else:
-        messages.error(request, "Unknown role. Contact SuperAdmin.")
-        return redirect("login")
-
-
-@login_required
-def mark_notification_read(request, pk):
-    notif = get_object_or_404(Notification, pk=pk, recipient=request.user)
-    notif.is_read = True
-    notif.save()
-    messages.success(request, "Notification marked as read ✅")
     return redirect("dashboard")
