@@ -1,100 +1,126 @@
 {% extends "base.html" %}
 {% load static %}
-
 {% block content %}
-<div class="container mt-4">
-    <h2 class="mb-3"> 🧑🧑🏽‍🏫 Teacher Dashboard</h2>
-
-    <!-- Notifications -->
-    <div class="mb-4">
-        <h5>📩 Notifications</h5>
-            <ul class="list-group mb-3">
-            {% for notif in notifications %}
-                <li class="list-group-item d-flex justify-content-between align-items-center
-                        {% if not notif.is_read %}list-group-item-warning{% endif %}">
-                {{ notif.message }}
-                <small class="text-muted">{{ notif.created_at|date:"d M,Y H:i" }}</small>
-
-                {% if not notif.is_read %}
-                    <a href="{% url 'mark_notification_read' notif.id %}" 
-                    class="btn btn-sm btn-outline-success">Mark as read</a>
-                {% endif %}
-                </li>
-            {% empty %}
-                <li class="list-group-item">No notifications yet.</li>
-            {% endfor %}
-        </ul>
+<div class="container mt-3">
+  <div class="d-flex justify-content-between align-items-center">
+    <h3>Teacher Dashboard</h3>
+    <div class="text-end">
+      <img src="{{ request.user.profile_picture.url if request.user.profile_picture else static('img/default_profile.png') }}"
+           alt="me" class="rounded-circle" style="height:36px;">
+      <div>{{ request.user.get_full_name }}</div>
     </div>
+  </div>
 
-    <!-- Performance Chart -->
-    <div class="card mb-4">
-        <div class="card-header">📊 Class Performance</div>
-        <div class="card-body">
-            <canvas id="performanceChart"></canvas>
-        </div>
-    </div>
+  <div class="row mt-3">
+    <!-- Quizzes + Notifications -->
+    <div class="col-md-7">
+      <h5>Your Quizzes</h5>
+      <div id="teacher-quizzes"></div>
 
-    <!-- Subjectives to Grade -->
-    <div class="card mb-4">
-        <div class="card-header">🖊️ Subjectives to Grade</div>
-        <div class="card-body">
-            <ul class="list-group">
-                {% for answer in subjectives_to_grade %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        {{ answer.student.username }} - {{ answer.question.text }}
-                        <a href="{% url 'grade_subjective' answer.id %}" class="btn btn-sm btn-warning">Grade</a>
-                    </li>
-                {% empty %}
-                    <li class="list-group-item">No pending subjective answers.</li>
-                {% endfor %}
-            </ul>
-        </div>
-    </div>
-
-    <!-- Quiz Management -->
-    <div class="card mb-4">
-        <div class="card-header">📚 Manage Exams </div>
-        <div class="card-body">
-            <a href="{% url 'create_quiz_page' %}" class="btn btn-success">➕ Add Exam</a>
-            <a href="{% url 'manage_quizzes_page' %}" class="btn btn-primary">⚙️ Manage Exams</a>
-        </div>
-    </div>
-
-    <!-- Result Downloads -->
-    <div class="card mb-4">
-        <div class="card-header">📥 Download Results</div>
-        <div class="card-body">
-            <a href="{% url 'export_consolidated_pdf' %}" class="btn btn-success">Download All Results (PDF)</a>
-        </div>
+      <hr>
+      <h5>Notifications</h5>
+      <ul class="list-group" id="teacher-notifs"></ul>
     </div>
 
     <!-- Broadcast -->
-    <div class="card mb-4">
-        <div class="card-header">📢 Broadcast to Students</div>
-        <div class="card-body">
-            <form method="post" action="{% url 'send_broadcast' %}">
-                {% csrf_token %}
-                <textarea name="message" class="form-control mb-2" placeholder="Write your message"></textarea>
-                <button type="submit" class="btn btn-primary">Send</button>
-            </form>
-        </div>
+    <div class="col-md-5">
+      <div class="card p-3">
+        <h5>Broadcast to Students</h5>
+        <div id="teacher-broadcast-alert" class="alert d-none" role="alert"></div>
+        <form id="teacherBroadcastForm">
+          <input type="hidden" name="role" value="student">
+          <div class="mb-2">
+            <textarea id="teacherBroadcastMessage" name="message" class="form-control" rows="4" placeholder="Message to students..."></textarea>
+          </div>
+          <button class="btn btn-primary" type="submit">Send</button>
+        </form>
+      </div>
     </div>
+  </div>
 </div>
+{% endblock %}
 
-<!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% block extra_js %}
 <script>
-const ctx = document.getElementById('performanceChart').getContext('2d');
-new Chart(ctx, {
-    type: 'bar',
-    data: {
-        labels: {{ chart_labels|safe }},
-        datasets: [{
-            label: 'Class Performance',
-            data: {{ chart_data|safe }},
-            backgroundColor: 'rgba(54, 162, 235, 0.6)',
-        }]
-    }
+const TEACHER_QUIZ_LIST_URL = "{% url 'exams:api_teacher_quizzes' %}";
+const TEACHER_BROADCAST_URL = "{% url 'exams:api_broadcast' %}";
+const NOTIF_UNREAD_URL = "{% url 'exams:api_notifications_unread' %}";
+const NOTIF_MARK_READ_URL = "{% url 'exams:api_notifications_mark_read' %}";
+const csrftoken = "{{ csrf_token }}";
+
+// Load teacher quizzes
+async function loadTeacherQuizzes() {
+  const res = await fetch(TEACHER_QUIZ_LIST_URL);
+  const j = await res.json();
+  const container = document.getElementById("teacher-quizzes");
+  container.innerHTML = "";
+  if (!j.ok) { container.textContent = "Error loading quizzes."; return; }
+  j.quizzes.forEach(q => {
+    const div = document.createElement("div");
+    div.className = "border rounded p-2 mb-2";
+    div.innerHTML = `<strong>${q.title}</strong> (${q.subject}) - Attempts: ${q.attempts}`;
+    container.appendChild(div);
+  });
+}
+
+// Load notifications
+async function fetchTeacherNotifications() {
+  const res = await fetch(NOTIF_UNREAD_URL);
+  const j = await res.json();
+  const list = document.getElementById("teacher-notifs");
+  list.innerHTML = "";
+  if (!j.ok) return;
+  j.notifications.forEach(n => {
+    const li = document.createElement("li");
+    li.className = "list-group-item d-flex justify-content-between align-items-start";
+    li.innerHTML = `
+      <div>
+        <div class="fw-bold">${n.sender || 'System'}</div>
+        <div class="small text-muted">${new Date(n.created_at).toLocaleString()}</div>
+        <div class="mt-1">${n.message}</div>
+      </div>
+      <div>
+        <button class="btn btn-sm btn-outline-primary mark-read" data-id="${n.id}">Mark read</button>
+      </div>
+    `;
+    list.appendChild(li);
+  });
+  document.querySelectorAll(".mark-read").forEach(btn => {
+    btn.addEventListener("click", async e => {
+      const id = e.currentTarget.dataset.id;
+      await fetch(NOTIF_MARK_READ_URL, {
+        method:"POST", headers:{"Content-Type":"application/json","X-CSRFToken": csrftoken},
+        body: JSON.stringify({id})
+      });
+      e.currentTarget.closest("li").remove();
+    });
+  });
+}
+
+// Broadcast
+document.getElementById("teacherBroadcastForm").addEventListener("submit", async function(e){
+  e.preventDefault();
+  const msg = document.getElementById("teacherBroadcastMessage").value.trim();
+  if (!msg) return;
+  const payload = {role:"student", message:msg};
+  const res = await fetch(TEACHER_BROADCAST_URL, {
+    method:"POST", headers:{"Content-Type":"application/json","X-CSRFToken":csrftoken},
+    body: JSON.stringify(payload)
+  });
+  const j = await res.json();
+  const alert = document.getElementById("teacher-broadcast-alert");
+  if (j.ok) {
+    alert.className = "alert alert-success"; alert.textContent = j.message; alert.classList.remove("d-none");
+    setTimeout(()=> alert.classList.add("d-none"), 3000);
+    document.getElementById("teacherBroadcastMessage").value = "";
+  } else {
+    alert.className = "alert alert-danger"; alert.textContent = j.error; alert.classList.remove("d-none");
+  }
 });
+
+// init
+loadTeacherQuizzes();
+fetchTeacherNotifications();
+setInterval(fetchTeacherNotifications, 10000);
 </script>
 {% endblock %}

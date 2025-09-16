@@ -1,75 +1,45 @@
-from django.contrib import messages
-from django.shortcuts import render, get_object_or_404, redirect
-from django.utils import timezone
-from .models import Quiz, Question, Choice, StudentQuizAttempt, ActionLog, Answer, Class, Subject
-from django.contrib.auth.decorators import login_required, user_passes_test
-from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
+# exams/views.py — top of file (replace the current imports up to and including any User assignment)
+import io
+import json
+import os
+from datetime import datetime, timedelta
+
+from django.conf import settings
+from django.core.files.storage import FileSystemStorage
+from django.db import transaction
 from django.db.models import Sum, Avg, Count
+from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
+from django.shortcuts import render, get_object_or_404, redirect
 from django.template.loader import render_to_string
+from django.utils import timezone
+from django.views.decorators.http import require_POST
+from django.core.paginator import Paginator
+from django.contrib import messages
+
+# auth / user model — CORRECT: get_user_model()
+from django.contrib.auth import get_user_model
+User = get_user_model()
+
+from django.contrib.auth.decorators import login_required, user_passes_test
+
+# models & forms & utils
+from .models import (
+    Quiz, Question, Choice, StudentQuizAttempt, ActionLog,
+    Answer, Class, Subject
+)
+from users.models import Notification  # keep after User assignment
 from .utils import log_action
 from .forms import QuizCreateForm, QuestionForm, ChoiceForm
-from django.conf import settings
-import json, os
-from django.http import HttpResponse
+
+# reporting & excel libs
 from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
-from reportlab.lib.units import inch
-from .models import StudentQuizAttempt
-
-
-# exams/views.py (relevant parts)
-import io
-import json
-from datetime import datetime
-from django.shortcuts import render, get_object_or_404
-from django.http import JsonResponse, HttpResponse, HttpResponseForbidden
-from django.contrib.auth.decorators import login_required, user_passes_test
-from django.db.models import Avg
-from django.core.paginator import Paginator
-from django.utils import timezone
-from django.conf import settings
-
-# Reporting / export libs
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
 import openpyxl
-
-# Import your models (adjust import paths if needed)
-from users.models import User, Notification
-from .models import Quiz, StudentQuizAttempt, Answer, ActionLog, Class, Subject
-
-# continuing from above
-from django.views.decorators.http import require_POST
-from django.contrib import messages
-from users.models import Notification
-from django.contrib.auth import get_user_model
-
-
-import json, os
-from django.http import JsonResponse, HttpResponseBadRequest, HttpResponse
-from django.db import transaction
-from django.utils import timezone
-from django.conf import settings
-from .models import Quiz, Question, Choice, Subject, Class as SchoolClass
-
-# Excel parser
 from openpyxl import load_workbook
-from datetime import datetime
-import json
-from django.db import transaction
-from datetime import timedelta
-from django.db import transaction
-from django.db.models import Sum, Avg
 
 
-
-
-User = get_user_model()
 
 def home(request):
     return render(request, "exams/home.html")
@@ -479,7 +449,7 @@ def admin_dashboard_data(request):
             for r in recipients:
                 Notification.objects.create(sender=request.user, recipient=r, message=message, role=role, is_broadcast=True)
                 created += 1
-            ActionLog.objects.create(
+                ActionLog.objects.create(
                 user=request.user,
                 action="Broadcast",
                 model_name="Notification",
@@ -556,7 +526,7 @@ def admin_dashboard_data(request):
     # -----------------------
     # Stats
     stats = {
-        "total_users": User.objects.filter(role__in=["admin", "teacher", "student"]).count(),
+        "total_users": User.objects.filter(role__in=["admin", "teacher", "student"], approved=True).count(),
         "admins": User.objects.filter(role="admin", approved=True).count(),
         "teachers": User.objects.filter(role="teacher", approved=True).count(),
         "students": User.objects.filter(role="student", approved=True).count(),
@@ -617,6 +587,7 @@ def admin_dashboard_data(request):
     notifications_qs = Notification.objects.filter(recipient=request.user, is_read=False).order_by("-created_at")[:10]
     notifications = [{"id": n.id, "message": n.message, "sender": getattr(n.sender, "username", None), "created_at": n.created_at.isoformat()} for n in notifications_qs]
 
+
     return JsonResponse({
         "stats": stats,
         "pending_list": pending_list,
@@ -628,6 +599,316 @@ def admin_dashboard_data(request):
         "quizzes": quizzes,
         "quizzes_total_pages": paginator_quiz.num_pages,
     })
+
+
+from django.db.models import Avg, Count, Q
+from django.http import JsonResponse
+from django.utils import timezone
+
+@login_required
+@user_passes_test(lambda u: u.role == "teacher")
+def teacher_dashboard(request):
+    return render(request, "exams/teacher_dashboard.html")
+
+@login_required
+@user_passes_test(lambda u: u.role == "teacher")
+def teacher_dashboard_data(request):
+    teacher = request.user
+
+    # Teacher’s created quizzes
+    quizzes = Quiz.objects.filter(created_by=teacher)
+
+    stats = {
+        "total_quizzes": quizzes.count(),
+        "published_quizzes": quizzes.filter(is_published=True).count(),
+        "pending_quizzes": quizzes.filter(is_published=False).count(),
+        "total_students_attempted": StudentQuizAttempt.objects.filter(quiz__in=quizzes, completed=True).values("student").distinct().count(),
+    }
+
+    # Leaderboard for teacher’s quizzes
+    leaderboard_qs = (
+        StudentQuizAttempt.objects.filter(quiz__in=quizzes, completed=True)
+        .values("student__username")
+        .annotate(avg_score=Avg("score"))
+        .order_by("-avg_score")[:10]
+    )
+    leaderboard = [{"username": x["student__username"], "avg_score": float(x["avg_score"] or 0)} for x in leaderboard_qs]
+
+    # Action logs
+    actions = list(
+        ActionLog.objects.filter(user=teacher).order_by("-timestamp")[:10].values("action", "timestamp")
+    )
+
+    return JsonResponse({"stats": stats, "leaderboard": leaderboard, "actions": actions})
+
+
+
+@login_required
+@user_passes_test(lambda u: u.role == "student")
+def student_dashboard(request):
+    return render(request, "exams/student_dashboard.html")
+
+
+@login_required
+@user_passes_test(lambda u: u.role == "student")
+def student_dashboard_data(request):
+    student = request.user
+    # class of the student
+    student_class = getattr(student, "student_class", None)
+
+    # Available quizzes (not attempted OR retake allowed)
+    available_quizzes = Quiz.objects.filter(
+        subject__school_class=student_class,
+        is_published=True,
+        start_time__lte=timezone.now(),
+        end_time__gte=timezone.now(),
+    ).exclude(
+        id__in=StudentQuizAttempt.objects.filter(student=student, completed=True, retake_allowed=False).values("quiz_id")
+    )
+
+    available_quizzes_data = list(
+        available_quizzes.values("id", "title", "subject__name", "start_time", "end_time", "duration_minutes")
+    )
+
+    # Past attempts
+    past_attempts_qs = StudentQuizAttempt.objects.filter(student=student, completed=True).select_related("quiz")
+    past_attempts = [
+        {
+            "quiz": a.quiz.title,
+            "score": float(a.score),
+            "retakes": a.retake_count,
+            "completed": a.completed,
+        }
+        for a in past_attempts_qs
+    ]
+
+    # Leaderboard (global)
+    leaderboard_qs = (
+        StudentQuizAttempt.objects.filter(completed=True)
+        .values("student__username")
+        .annotate(avg_score=Avg("score"))
+        .order_by("-avg_score")[:10]
+    )
+    leaderboard = [{"username": r["student__username"], "avg_score": float(r["avg_score"] or 0)} for r in leaderboard_qs]
+
+    return JsonResponse({
+        "available_quizzes": available_quizzes_data,
+        "past_attempts": past_attempts,
+        "leaderboard": leaderboard,
+    })
+
+
+# exams/views_notifications.py (or append to exams/views.py)
+
+import json
+from django.shortcuts import get_object_or_404, render
+from django.http import JsonResponse, HttpResponseForbidden
+from django.contrib.auth.decorators import login_required, user_passes_test
+from django.views.decorators.http import require_POST
+from django.utils import timezone
+
+from users.models import User, Notification
+from .models import ActionLog  # use your ActionLog from exams.models
+
+
+def _is_admin(user):
+    return user.is_authenticated and user.role in ("admin", "superadmin")
+
+def _is_teacher(user):
+    return user.is_authenticated and user.role == "teacher"
+
+
+# -------------------
+# Broadcast endpoint
+# -------------------
+@login_required
+@require_POST
+def api_broadcast(request):
+    """
+    POST JSON { "role": "student"|"teacher", "message": "..." }
+    - Admins (admin/superadmin) may broadcast to 'teacher' or 'student'
+    - Teachers may broadcast only to 'student'
+    Creates Notification objects for each recipient and logs ActionLog.
+    """
+    try:
+        payload = json.loads(request.body.decode())
+    except Exception:
+        return JsonResponse({"ok": False, "error": "Invalid JSON"}, status=400)
+
+    role = payload.get("role")
+    message = (payload.get("message") or "").strip()
+    if not role or not message:
+        return JsonResponse({"ok": False, "error": "role and message required"}, status=400)
+
+    # Permissions: teacher can only send to students
+    if request.user.role == "teacher" and role != "student":
+        return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
+
+    # Only allow admin/teacher to broadcast
+    if request.user.role not in ("admin", "superadmin", "teacher"):
+        return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
+
+    recipients = User.objects.filter(role=role, approved=True)
+    created = 0
+    for r in recipients:
+        Notification.objects.create(sender=request.user, recipient=r, role=role, message=message, created_at=timezone.now())
+        created += 1
+
+    ActionLog.objects.create(
+        user=request.user,
+        action="Broadcast sent",
+        model_name="Notification",
+        object_id="bulk",
+        details={"role": role, "count": created, "sample": message[:120]},
+        timestamp=timezone.now()
+    )
+
+    return JsonResponse({"ok": True, "message": f"Broadcast sent to {created} {role}(s).", "count": created})
+
+
+# -------------------
+# Get unread notifications for current user
+# -------------------
+@login_required
+def api_notifications_unread(request):
+    """
+    GET -> returns unread (is_read=False) notifications for request.user
+    """
+    qs = Notification.objects.filter(recipient=request.user, is_read=False).order_by("-created_at")
+    data = [
+        {
+            "id": n.id,
+            "message": n.message,
+            "sender": n.sender.username if n.sender else None,
+            "created_at": n.created_at.isoformat()
+        }
+        for n in qs
+    ]
+    return JsonResponse({"ok": True, "notifications": data})
+
+
+# -------------------
+# Mark notification as read
+# -------------------
+@login_required
+@require_POST
+def api_notifications_mark_read(request):
+    """
+    POST JSON { "id": <notification_id> } -> set is_read = True for that notification if it belongs to current user
+    """
+    try:
+        payload = json.loads(request.body.decode())
+    except Exception:
+        return JsonResponse({"ok": False, "error": "Invalid JSON"}, status=400)
+
+    nid = payload.get("id")
+    if not nid:
+        return JsonResponse({"ok": False, "error": "id required"}, status=400)
+
+    notif = get_object_or_404(Notification, id=nid, recipient=request.user)
+    notif.is_read = True
+    notif.save(update_fields=["is_read"])
+
+    ActionLog.objects.create(
+        user=request.user,
+        action="Read notification",
+        model_name="Notification",
+        object_id=str(nid),
+        details={"message_sample": (notif.message[:80] if notif.message else "")},
+        timestamp=timezone.now()
+    )
+
+    return JsonResponse({"ok": True, "message": "marked read", "id": nid})
+
+
+# ---- USER MANAGEMENT ----
+@login_required
+@user_passes_test(is_admin)
+def manage_users(request):
+    users = User.objects.exclude(role="superadmin").order_by("-date_joined")
+    return render(request, "exams/manage_users.html", {"users": users})
+
+
+@login_required
+@user_passes_test(is_admin)
+def create_user(request):
+    if request.method == "POST":
+        username = request.POST["username"]
+        email = request.POST["email"]
+        role = request.POST["role"]
+        password = request.POST["password"]
+
+        user = User.objects.create_user(username=username, email=email, password=password, role=role, approved=True)
+        ActionLog.objects.create(user=request.user, action=f"Created user {user.username} ({role})")
+        messages.success(request, f"User {username} created successfully.")
+        return redirect("manage_users")
+
+    return render(request, "exams/create_user.html")
+
+
+# ---- QUIZ MANAGEMENT ----
+@login_required
+@user_passes_test(is_admin)
+def manage_quizzes(request):
+    quizzes = Quiz.objects.all().order_by("-created_at")
+    return render(request, "exams/manage_quizzes.html", {"quizzes": quizzes})
+
+
+@login_required
+@user_passes_test(is_admin)
+def create_quiz(request):
+    if request.method == "POST":
+        title = request.POST["title"]
+        subject_id = request.POST["subject"]
+        duration = int(request.POST["duration"])
+
+        subject = Subject.objects.get(id=subject_id)
+        quiz = Quiz.objects.create(title=title, subject=subject, duration=duration, created_by=request.user)
+        ActionLog.objects.create(user=request.user, action=f"Created quiz {quiz.title}")
+        messages.success(request, f"Quiz {title} created successfully.")
+        return redirect("manage_quizzes")
+
+    subjects = Subject.objects.all()
+    return render(request, "exams/create_quiz.html", {"subjects": subjects})
+
+
+@login_required
+@user_passes_test(is_admin)
+def upload_quiz_excel(request):
+    if request.method == "POST" and request.FILES["file"]:
+        file = request.FILES["file"]
+        fs = FileSystemStorage()
+        filename = fs.save(file.name, file)
+        filepath = fs.path(filename)
+
+        wb = openpyxl.load_workbook(filepath)
+        sheet = wb.active
+
+        for row in sheet.iter_rows(min_row=2, values_only=True):  # skip header
+            title, subject_name, duration = row[:3]
+            subject, _ = Subject.objects.get_or_create(name=subject_name)
+            Quiz.objects.create(title=title, subject=subject, duration=int(duration), created_by=request.user)
+
+        ActionLog.objects.create(user=request.user, action=f"Uploaded quizzes from Excel")
+        messages.success(request, "Quizzes uploaded successfully.")
+        return redirect("manage_quizzes")
+
+    return render(request, "exams/upload_quiz_excel.html")
+
+
+@login_required
+@user_passes_test(is_admin)
+def sample_quiz_excel(request):
+    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = 'attachment; filename="sample_quiz.xlsx"'
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Title", "Subject", "Duration(minutes)"])
+    ws.append(["Sample Quiz 1", "Mathematics", 30])
+    ws.append(["Sample Quiz 2", "English", 40])
+    wb.save(response)
+    return response
 
 
 from django.db.models import Q  
@@ -825,206 +1106,80 @@ def consolidated_results_pdf(request):
 
 
 
-@login_required
-def student_consolidated_results_pdf(request):
-    student = request.user
-    response = HttpResponse(content_type='application/pdf')
-    response['Content-Disposition'] = f'attachment; filename="{student.username}_results.pdf"'
+# @login_required
+# def student_consolidated_results_pdf(request):
+#     student = request.user
+#     response = HttpResponse(content_type='application/pdf')
+#     response['Content-Disposition'] = f'attachment; filename="{student.username}_results.pdf"'
 
-    p = canvas.Canvas(response, pagesize=A4)
-    width, height = A4
+#     p = canvas.Canvas(response, pagesize=A4)
+#     width, height = A4
 
-    # Header: logo + profile
-    p.drawImage("static/images/school_logo.png", 40, height - 100, width=60, height=60, mask='auto')
-    if student.profile_picture:
-        try:
-            p.drawImage(student.profile_picture.path, width - 100, height - 100, width=60, height=60, mask='auto')
-        except Exception:
-            pass
+#     # Header: logo + profile
+#     p.drawImage("static/images/school_logo.png", 40, height - 100, width=60, height=60, mask='auto')
+#     if student.profile_picture:
+#         try:
+#             p.drawImage(student.profile_picture.path, width - 100, height - 100, width=60, height=60, mask='auto')
+#         except Exception:
+#             pass
 
-    p.setFont("Helvetica-Bold", 16)
-    p.drawCentredString(width/2, height - 50, "SCHOOL NAME")
-    p.setFont("Helvetica", 12)
-    p.drawCentredString(width/2, height - 70, f"Student: {student.get_full_name()}")
+#     p.setFont("Helvetica-Bold", 16)
+#     p.drawCentredString(width/2, height - 50, "SCHOOL NAME")
+#     p.setFont("Helvetica", 12)
+#     p.drawCentredString(width/2, height - 70, f"Student: {student.get_full_name()}")
 
-    y = height - 150
+#     y = height - 150
 
-    attempts = StudentQuizAttempt.objects.filter(student=student).select_related("quiz")
+#     attempts = StudentQuizAttempt.objects.filter(student=student).select_related("quiz")
 
-    for attempt in attempts:
-        quiz = attempt.quiz
+#     for attempt in attempts:
+#         quiz = attempt.quiz
 
-        # Score computation
-        total_obj = ObjectiveAnswer.objects.filter(attempt=attempt).count()
-        correct_obj = ObjectiveAnswer.objects.filter(attempt=attempt, choice__is_correct=True).count()
-        graded_subj = SubjectiveAnswer.objects.filter(attempt=attempt, marks_awarded__isnull=False)
-        subj_score = sum(ans.marks_awarded for ans in graded_subj)
-        subj_total = sum(ans.question.marks for ans in graded_subj)
+#         # Score computation
+#         total_obj = ObjectiveAnswer.objects.filter(attempt=attempt).count()
+#         correct_obj = ObjectiveAnswer.objects.filter(attempt=attempt, choice__is_correct=True).count()
+#         graded_subj = SubjectiveAnswer.objects.filter(attempt=attempt, marks_awarded__isnull=False)
+#         subj_score = sum(ans.marks_awarded for ans in graded_subj)
+#         subj_total = sum(ans.question.marks for ans in graded_subj)
 
-        pending_subj = SubjectiveAnswer.objects.filter(attempt=attempt, marks_awarded__isnull=True).count()
+#         pending_subj = SubjectiveAnswer.objects.filter(attempt=attempt, marks_awarded__isnull=True).count()
 
-        total_score = correct_obj + subj_score
-        total_marks = total_obj + subj_total + pending_subj  # pending ones reserved, no awarded marks yet
+#         total_score = correct_obj + subj_score
+#         total_marks = total_obj + subj_total + pending_subj  # pending ones reserved, no awarded marks yet
 
-        # Print quiz title & result
-        p.setFont("Helvetica-Bold", 13)
-        p.drawString(50, y, f"Quiz: {quiz.title} ({quiz.subject.name})")
-        y -= 20
-        p.setFont("Helvetica", 11)
-        p.drawString(70, y, f"Score: {total_score}/{total_marks} | Pending: {pending_subj}")
-        y -= 20
+#         # Print quiz title & result
+#         p.setFont("Helvetica-Bold", 13)
+#         p.drawString(50, y, f"Quiz: {quiz.title} ({quiz.subject.name})")
+#         y -= 20
+#         p.setFont("Helvetica", 11)
+#         p.drawString(70, y, f"Score: {total_score}/{total_marks} | Pending: {pending_subj}")
+#         y -= 20
 
-        # List wrongly answered objective questions (review)
-        wrong_obj = ObjectiveAnswer.objects.filter(attempt=attempt, choice__is_correct=False)
-        if wrong_obj.exists():
-            p.setFont("Helvetica-Oblique", 11)
-            p.drawString(70, y, "Review of Wrong Answers:")
-            y -= 20
-            for obj in wrong_obj:
-                q_text = obj.question.text[:60] + ("..." if len(obj.question.text) > 60 else "")
-                p.drawString(90, y, f"- {q_text}")
-                y -= 15
-                if y < 100:
-                    p.showPage()
-                    y = height - 100
+#         # List wrongly answered objective questions (review)
+#         wrong_obj = ObjectiveAnswer.objects.filter(attempt=attempt, choice__is_correct=False)
+#         if wrong_obj.exists():
+#             p.setFont("Helvetica-Oblique", 11)
+#             p.drawString(70, y, "Review of Wrong Answers:")
+#             y -= 20
+#             for obj in wrong_obj:
+#                 q_text = obj.question.text[:60] + ("..." if len(obj.question.text) > 60 else "")
+#                 p.drawString(90, y, f"- {q_text}")
+#                 y -= 15
+#                 if y < 100:
+#                     p.showPage()
+#                     y = height - 100
 
-        y -= 15
-        if y < 100:
-            p.showPage()
-            y = height - 100
+#         y -= 15
+#         if y < 100:
+#             p.showPage()
+#             y = height - 100
 
-    p.showPage()
-    p.save()
-    return response
-
-
-
-@login_required
-def teacher_class_results_pdf(request):
-    teacher = request.user
-    response = HttpResponse(content_type='application/pdf')
-    response['Content-Disposition'] = 'attachment; filename="class_results.pdf"'
-
-    p = canvas.Canvas(response, pagesize=A4)
-    width, height = A4
-
-    # Header
-    p.drawImage("static/images/school_logo.png", 40, height - 100, width=60, height=60, mask='auto')
-    if teacher.profile_picture:
-        p.drawImage(teacher.profile_picture.path, width - 100, height - 100, width=60, height=60, mask='auto')
-
-    p.setFont("Helvetica-Bold", 16)
-    p.drawCentredString(width/2, height - 50, "SCHOOL NAME")
-    p.setFont("Helvetica", 12)
-    p.drawCentredString(width/2, height - 70, f"Teacher: {teacher.get_full_name()}")
-
-    y = height - 150
-    quizzes = Quiz.objects.filter(created_by=teacher)
-
-    for quiz in quizzes:
-        p.setFont("Helvetica-Bold", 13)
-        p.drawString(50, y, f"Quiz: {quiz.title}")
-        y -= 20
-
-        attempts = StudentQuizAttempt.objects.filter(quiz=quiz).select_related("student")
-        for attempt in attempts:
-            # Compute score
-            total_obj = ObjectiveAnswer.objects.filter(attempt=attempt).count()
-            correct_obj = ObjectiveAnswer.objects.filter(attempt=attempt, is_correct=True).count()
-            pending_subj = SubjectiveAnswer.objects.filter(attempt=attempt, score__isnull=True).count()
-            graded_subj = SubjectiveAnswer.objects.filter(attempt=attempt, score__isnull=False)
-
-            subj_score = sum(ans.score for ans in graded_subj)
-            subj_total = sum(ans.question.max_marks for ans in graded_subj)
-
-            total_score = correct_obj + subj_score
-            total_marks = total_obj + subj_total + (pending_subj * 0)  # pending not graded yet
-
-            p.setFont("Helvetica", 11)
-            p.drawString(70, y, f"Student: {attempt.student.get_full_name()} | Score: {total_score}/{total_marks} | Pending: {pending_subj}")
-            y -= 20
-
-            if y < 100:
-                p.showPage()
-                y = height - 100
-
-        y -= 10
-
-    p.showPage()
-    p.save()
-    return response
+#     p.showPage()
+#     p.save()
+#     return response
 
 
-@login_required
-def admin_overall_results_pdf(request):
-    response = HttpResponse(content_type='application/pdf')
-    response['Content-Disposition'] = 'attachment; filename="admin_results.pdf"'
 
-    p = canvas.Canvas(response, pagesize=A4)
-    width, height = A4
-
-    # Header
-    p.drawImage("static/images/school_logo.png", 40, height - 100, width=60, height=60, mask='auto')
-    if request.user.profile_picture:
-        p.drawImage(request.user.profile_picture.path, width - 100, height - 100, width=60, height=60, mask='auto')
-
-    p.setFont("Helvetica-Bold", 16)
-    p.drawCentredString(width/2, height - 50, "SCHOOL NAME")
-    p.setFont("Helvetica", 12)
-    p.drawCentredString(width/2, height - 70, f"Admin: {request.user.get_full_name()}")
-
-    y = height - 150
-
-    # Leaderboard (top 10 students by computed score)
-    leaderboard = []
-    attempts = StudentQuizAttempt.objects.select_related("student")
-    for attempt in attempts:
-        total_obj = ObjectiveAnswer.objects.filter(attempt=attempt).count()
-        correct_obj = ObjectiveAnswer.objects.filter(attempt=attempt, is_correct=True).count()
-        graded_subj = SubjectiveAnswer.objects.filter(attempt=attempt, score__isnull=False)
-        subj_score = sum(ans.score for ans in graded_subj)
-
-        score = correct_obj + subj_score
-        leaderboard.append((attempt.student, score))
-
-    # sort by score
-    leaderboard = sorted(leaderboard, key=lambda x: x[1], reverse=True)[:10]
-
-    p.setFont("Helvetica-Bold", 13)
-    p.drawString(50, y, "Leaderboard (Top Students)")
-    y -= 20
-
-    for idx, (student, score) in enumerate(leaderboard, start=1):
-        p.setFont("Helvetica", 11)
-        p.drawString(70, y, f"{idx}. {student.get_full_name()} - {score} points")
-        y -= 20
-        if y < 100:
-            p.showPage()
-            y = height - 100
-
-    y -= 30
-
-    # Users summary
-    total_users = User.objects.count()
-    students = User.objects.filter(role="student").count()
-    teachers = User.objects.filter(role="teacher").count()
-    admins = User.objects.filter(role="admin").count()
-
-    p.setFont("Helvetica-Bold", 13)
-    p.drawString(50, y, "Users Summary")
-    y -= 20
-    p.setFont("Helvetica", 11)
-    p.drawString(70, y, f"Total Users: {total_users}")
-    y -= 20
-    p.drawString(70, y, f"Students: {students}")
-    y -= 20
-    p.drawString(70, y, f"Teachers: {teachers}")
-    y -= 20
-    p.drawString(70, y, f"Admins: {admins}")
-
-    p.showPage()
-    p.save()
-    return response
 
 
 # --------------------------------------------------------------#
@@ -1638,8 +1793,8 @@ def import_quiz_excel(request):
         return JsonResponse({"ok": False, "error": "Metadata must include class_name, subject_name and quiz_title"}, status=400)
 
     try:
-        school_class = SchoolClass.objects.get(name__iexact=str(class_name).strip())
-    except SchoolClass.DoesNotExist:
+        school_class = Class.objects.get(name__iexact=str(class_name).strip())
+    except Class.DoesNotExist:
         return JsonResponse({"ok": False, "error": f"Class '{class_name}' not found"}, status=404)
     try:
         subject = Subject.objects.get(name__iexact=str(subject_name).strip(), school_class=school_class)
@@ -1910,116 +2065,116 @@ def quiz_json(request, quiz_id):
     return JsonResponse({"ok": True, "quiz": data})
 
 
-@login_required
-def start_attempt(request, quiz_id):
-    quiz = get_object_or_404(Quiz, id=quiz_id, is_published=True)
-    now = timezone.now()
-    if not (quiz.start_time <= now <= quiz.end_time):
-        return JsonResponse({"ok": False, "error": "Quiz not active."}, status=400)
+# @login_required
+# def start_attempt(request, quiz_id):
+#     quiz = get_object_or_404(Quiz, id=quiz_id, is_published=True)
+#     now = timezone.now()
+#     if not (quiz.start_time <= now <= quiz.end_time):
+#         return JsonResponse({"ok": False, "error": "Quiz not active."}, status=400)
 
-    # If student already has an unsubmitted attempt and time hasn't elapsed => resume it
-    existing = StudentQuizAttempt.objects.filter(student=request.user, quiz=quiz, is_submitted=False).order_by('-started_at').first()
-    if existing:
-        # compute end_time based on started_at + duration
-        end_time = existing.started_at + timezone.timedelta(minutes=quiz.duration_minutes)
-        if timezone.now() > end_time:
-            # time elapsed -> auto-submit or mark submitted
-            # attempt auto-grade objective answers here, mark submitted
-            auto_grade_attempt(existing)
-            existing.is_submitted = True
-            existing.completed_at = timezone.now()
-            existing.save()
-            return JsonResponse({"ok": False, "error": "Previous attempt timed out and was auto-submitted."}, status=400)
-        else:
-            return JsonResponse({
-                "ok": True,
-                "attempt_id": existing.id,
-                "end_time": end_time.isoformat(),
-                "resume": True
-            })
-    # else create new attempt
-    attempt = StudentQuizAttempt.objects.create(student=request.user, quiz=quiz, started_at=timezone.now(), is_submitted=False)
-    end_time = attempt.started_at + timezone.timedelta(minutes=quiz.duration_minutes)
-    return JsonResponse({"ok": True, "attempt_id": attempt.id, "end_time": end_time.isoformat(), "resume": False})
+#     # If student already has an unsubmitted attempt and time hasn't elapsed => resume it
+#     existing = StudentQuizAttempt.objects.filter(student=request.user, quiz=quiz, is_submitted=False).order_by('-started_at').first()
+#     if existing:
+#         # compute end_time based on started_at + duration
+#         end_time = existing.started_at + timezone.timedelta(minutes=quiz.duration_minutes)
+#         if timezone.now() > end_time:
+#             # time elapsed -> auto-submit or mark submitted
+#             # attempt auto-grade objective answers here, mark submitted
+#             auto_grade_attempt(existing)
+#             existing.is_submitted = True
+#             existing.completed_at = timezone.now()
+#             existing.save()
+#             return JsonResponse({"ok": False, "error": "Previous attempt timed out and was auto-submitted."}, status=400)
+#         else:
+#             return JsonResponse({
+#                 "ok": True,
+#                 "attempt_id": existing.id,
+#                 "end_time": end_time.isoformat(),
+#                 "resume": True
+#             })
+#     # else create new attempt
+#     attempt = StudentQuizAttempt.objects.create(student=request.user, quiz=quiz, started_at=timezone.now(), is_submitted=False)
+#     end_time = attempt.started_at + timezone.timedelta(minutes=quiz.duration_minutes)
+#     return JsonResponse({"ok": True, "attempt_id": attempt.id, "end_time": end_time.isoformat(), "resume": False})
 
-def auto_grade_attempt(attempt):
-    """
-    Simple auto-grade: iterate objective answers, award question.marks if chosen choice.is_correct.
-    We assume ObjectiveAnswer entries exist (from autosaves). If not, they will be treated as unanswered (0).
-    """
-    total_score = 0
-    total_marks = 0
-    for q in attempt.quiz.questions.filter(question_type='objective'):
-        total_marks += q.marks
-        obj = ObjectiveAnswer.objects.filter(attempt=attempt, question=q).select_related('choice').first()
-        if obj and obj.choice and obj.choice.is_correct:
-            total_score += q.marks
-    # Subjective marks are added later when graded — compute total_marks to include subjectives
-    subj_total = sum(q.marks for q in attempt.quiz.questions.filter(question_type='subjective'))
-    attempt.score = total_score
-    attempt.total_marks = total_marks + subj_total
-    attempt.save()
+# def auto_grade_attempt(attempt):
+#     """
+#     Simple auto-grade: iterate objective answers, award question.marks if chosen choice.is_correct.
+#     We assume ObjectiveAnswer entries exist (from autosaves). If not, they will be treated as unanswered (0).
+#     """
+#     total_score = 0
+#     total_marks = 0
+#     for q in attempt.quiz.questions.filter(question_type='objective'):
+#         total_marks += q.marks
+#         obj = ObjectiveAnswer.objects.filter(attempt=attempt, question=q).select_related('choice').first()
+#         if obj and obj.choice and obj.choice.is_correct:
+#             total_score += q.marks
+#     # Subjective marks are added later when graded — compute total_marks to include subjectives
+#     subj_total = sum(q.marks for q in attempt.quiz.questions.filter(question_type='subjective'))
+#     attempt.score = total_score
+#     attempt.total_marks = total_marks + subj_total
+#     attempt.save()
 
-@require_POST
-@login_required
-def autosave_attempt(request, attempt_id):
-    attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id, student=request.user, is_submitted=False)
-    try:
-        payload = json.loads(request.body.decode())
-    except Exception:
-        return JsonResponse({"ok": False, "error": "Invalid JSON"}, status=400)
-    answers = payload.get('answers', [])  # list of {question_id, choice_id/text}
-    # Save each answer (create or update)
-    for a in answers:
-        qid = a.get('question_id')
-        if not qid:
-            continue
-        q = Question.objects.get(id=qid)
-        if q.question_type == 'objective':
-            choice_id = a.get('choice_id')
-            if choice_id:
-                # update or create ObjectiveAnswer
-                oa, _ = ObjectiveAnswer.objects.get_or_create(attempt=attempt, question=q)
-                oa.choice_id = choice_id
-                oa.save()
-            else:
-                # unanswered -> remove existing maybe
-                ObjectiveAnswer.objects.filter(attempt=attempt, question=q).delete()
-        else:
-            text = a.get('text', '')
-            sa, _ = SubjectiveAnswer.objects.get_or_create(attempt=attempt, question=q)
-            sa.answer_text = text
-            sa.save()
-    return JsonResponse({"ok": True})
+# @require_POST
+# @login_required
+# def autosave_attempt(request, attempt_id):
+#     attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id, student=request.user, is_submitted=False)
+#     try:
+#         payload = json.loads(request.body.decode())
+#     except Exception:
+#         return JsonResponse({"ok": False, "error": "Invalid JSON"}, status=400)
+#     answers = payload.get('answers', [])  # list of {question_id, choice_id/text}
+#     # Save each answer (create or update)
+#     for a in answers:
+#         qid = a.get('question_id')
+#         if not qid:
+#             continue
+#         q = Question.objects.get(id=qid)
+#         if q.question_type == 'objective':
+#             choice_id = a.get('choice_id')
+#             if choice_id:
+#                 # update or create ObjectiveAnswer
+#                 oa, _ = ObjectiveAnswer.objects.get_or_create(attempt=attempt, question=q)
+#                 oa.choice_id = choice_id
+#                 oa.save()
+#             else:
+#                 # unanswered -> remove existing maybe
+#                 ObjectiveAnswer.objects.filter(attempt=attempt, question=q).delete()
+#         else:
+#             text = a.get('text', '')
+#             sa, _ = SubjectiveAnswer.objects.get_or_create(attempt=attempt, question=q)
+#             sa.answer_text = text
+#             sa.save()
+#     return JsonResponse({"ok": True})
 
-@require_POST
-@login_required
-def submit_attempt(request, attempt_id):
-    attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id, student=request.user, is_submitted=False)
-    # server-side check: time
-    quiz = attempt.quiz
-    end_time = attempt.started_at + timezone.timedelta(minutes=quiz.duration_minutes)
-    now = timezone.now()
-    if now > end_time:
-        # time elapsed: auto-grade & finalize
-        auto_grade_attempt(attempt)
-        attempt.is_submitted = True
-        attempt.completed_at = now
-        attempt.save()
-        return JsonResponse({"ok": True, "auto_submitted": True, "message": "Time elapsed — attempt auto-submitted."})
+# @require_POST
+# @login_required
+# def submit_attempt(request, attempt_id):
+#     attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id, student=request.user, is_submitted=False)
+#     # server-side check: time
+#     quiz = attempt.quiz
+#     end_time = attempt.started_at + timezone.timedelta(minutes=quiz.duration_minutes)
+#     now = timezone.now()
+#     if now > end_time:
+#         # time elapsed: auto-grade & finalize
+#         auto_grade_attempt(attempt)
+#         attempt.is_submitted = True
+#         attempt.completed_at = now
+#         attempt.save()
+#         return JsonResponse({"ok": True, "auto_submitted": True, "message": "Time elapsed — attempt auto-submitted."})
 
-    # otherwise grade objectives now
-    auto_grade_attempt(attempt)
-    attempt.is_submitted = True
-    attempt.completed_at = now
-    attempt.save()
+#     # otherwise grade objectives now
+    # auto_grade_attempt(attempt)
+    # attempt.is_submitted = True
+    # attempt.completed_at = now
+    # attempt.save()
 
-    # optionally create Notification for teacher that subjectives need grading
-    from .models import Notification
-    if attempt.quiz.created_by:
-        Notification.objects.create(title=f"New attempt by {request.user.username}", message=f"{request.user.username} submitted {attempt.quiz.title}", sender=request.user, target_role='teachers')
+    # # optionally create Notification for teacher that subjectives need grading
+    # from .models import Notification
+    # if attempt.quiz.created_by:
+    #     Notification.objects.create(title=f"New attempt by {request.user.username}", message=f"{request.user.username} submitted {attempt.quiz.title}", sender=request.user, target_role='teachers')
 
-    return JsonResponse({"ok": True, "message": "Submitted", "score_so_far": attempt.score})
+    # return JsonResponse({"ok": True, "message": "Submitted", "score_so_far": attempt.score})
  
 
 from openpyxl import Workbook

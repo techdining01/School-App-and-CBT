@@ -1,88 +1,174 @@
 {% extends "base.html" %}
 {% load static %}
-
 {% block content %}
-<div class="row ">
-<div class="mx-auto">
-<div class="container mt-4">
-    <h2 class="mb-3">🎓 Student Dashboard</h2>
-<!-- Notifications -->
-    <h5>📩 Notifications</h5>
-        <ul class="list-group mb-3">
-            {% for notif in notifications %}
-                <li class="list-group-item d-flex justify-content-between align-items-center
-                        {% if not notif.is_read %}list-group-item-warning{% endif %}">
-                {{ notif.message }}
-                <small class="text-muted">{{ notif.created_at|date:"M d, H:i" }}</small>
+<div class="container mt-3">
+  <div class="d-flex justify-content-between">
+    <h3>Student Dashboard</h3>
+    <div>
+      <img src="{{ request.user.profile_picture.url if request.user.profile_picture else static('img/default_profile.png') }}"
+           alt="me" class="rounded-circle" style="height:36px;">
+    </div>
+  </div>
 
-                {% if not notif.is_read %}
-                    <a href="{% url 'mark_notification_read' notif.id %}" 
-                    class="btn btn-sm btn-outline-success">Mark as read</a>
-                {% endif %}
-                </li>
-            {% empty %}
-                <li class="list-group-item">No notifications yet.</li>
-            {% endfor %}
-        </ul>
+  <div class="row mt-3">
+    <!-- Left: Quizzes and attempts -->
+    <div class="col-md-8">
+      <h5>Available Quizzes</h5>
+      <div id="student-quizzes"></div>
+
+      <hr>
+      <h5>Your Attempts</h5>
+      <div id="student-attempts"></div>
     </div>
 
-
-    <!-- Summary -->
-    <div class="card mb-4">
-        <div class="card-header">📊 Summary</div>
-        <div class="card-body">
-            <p>Total Exams Attempted: {{ total_attempts }}</p>
-            <p>Objective Results: {{ auto_graded_count }}</p>
-            <p>Pending Subjectives: {{ pending_subjectives }}</p>
+    <!-- Right: Notifications -->
+    <div class="col-md-4">
+      <div class="card p-2">
+        <div class="d-flex justify-content-between align-items-center">
+          <strong>Messages</strong>
+          <small class="text-muted">Unread</small>
         </div>
+        <ul class="list-group mt-2" id="student-notifs"></ul>
+      </div>
     </div>
-
-    <!-- Available Quizzes -->
-    <div class="card mb-4">
-        <div class="card-header">📝 Available Exams</div>
-        <div class="card-body">
-            <ul class="list-group">
-                {% for quiz in available_quizzes %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        {{ quiz.title }}
-                        <a href="{% url 'take_quiz' quiz.id %}" class="btn btn-sm btn-primary">Take Exam</a>
-                    </li>
-                        {% if quiz.allow_retake %}
-                    <li> <span class="badge">Retake Allowed</span>
-                        {% endif %}
-                        <a href="{% url 'take_quiz' quiz.id %}">Start Quiz</a>
-                    </li>
-                {% empty %}
-                    <li class="list-group-item">No Exams available.</li>
-                {% endfor %}
-            </ul>
-        </div>
-    </div>
-
-    <!-- Results Review -->
-    <div class="card mb-4">
-        <div class="card-header">📖 Review Wrong Answers</div>
-        <div class="card-body">
-            {% for attempt in quiz_attempts %}
-                <h6>{{ attempt.quiz.title }}</h6>
-                <ul>
-                    {% for wrong in attempt.wrong_answers %}
-                        <li>Q: {{ wrong.question.text }} <br>
-                            <strong>Your Answer:</strong> {{ wrong.your_answer }} <br>
-                            <strong>Correct Answer:</strong> {{ wrong.correct_answer }}
-                        </li>
-                    {% endfor %}
-                </ul>
-            {% empty %}
-                <p>No attempts yet.</p>
-            {% endfor %}
-        </div>
-    </div>
-
-    <!-- Consolidated Results -->
-    <a href="{% url 'export_consolidated_pdf' %}" class="btn btn-success">
-        📥 Download Consolidated Results (PDF)
-    </a>
+  </div>
 </div>
+
+<!-- Quiz Modal -->
+<div class="modal fade" id="quizModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="quizModalTitle">Quiz</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="quizModalBody">
+        <!-- Quiz will be loaded via AJAX -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const QUIZ_LIST_URL = "{% url 'exams:api_student_quizzes' %}";
+const ATTEMPT_LIST_URL = "{% url 'exams:api_student_attempts' %}";
+const NOTIF_UNREAD_URL = "{% url 'exams:api_notifications_unread' %}";
+const NOTIF_MARK_READ_URL = "{% url 'exams:api_notifications_mark_read' %}";
+const QUIZ_TAKE_URL = "{% url 'exams:api_take_quiz' %}";
+const csrftoken = "{{ csrf_token }}";
+
+// ---------- Load Quizzes ----------
+async function loadStudentQuizzes() {
+  const res = await fetch(QUIZ_LIST_URL);
+  const j = await res.json();
+  const container = document.getElementById("student-quizzes");
+  container.innerHTML = "";
+  if (!j.ok) { container.textContent = "Error loading quizzes."; return; }
+  j.quizzes.forEach(q => {
+    const card = document.createElement("div");
+    card.className = "card mb-2";
+    card.innerHTML = `
+      <div class="card-body d-flex justify-content-between align-items-center">
+        <div>
+          <h6>${q.title}</h6>
+          <small class="text-muted">${q.subject}</small>
+        </div>
+        <div>
+          <button class="btn btn-sm btn-primary start-quiz" data-id="${q.id}">Start</button>
+          ${q.allow_retake ? `<button class="btn btn-sm btn-warning retake-quiz" data-id="${q.id}">Retake</button>` : ""}
+        </div>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+
+  document.querySelectorAll(".start-quiz").forEach(btn => {
+    btn.addEventListener("click", () => openQuiz(btn.dataset.id, "start"));
+  });
+  document.querySelectorAll(".retake-quiz").forEach(btn => {
+    btn.addEventListener("click", () => openQuiz(btn.dataset.id, "retake"));
+  });
+}
+
+// ---------- Load Attempts ----------
+async function loadStudentAttempts() {
+  const res = await fetch(ATTEMPT_LIST_URL);
+  const j = await res.json();
+  const container = document.getElementById("student-attempts");
+  container.innerHTML = "";
+  if (!j.ok) { container.textContent = "Error loading attempts."; return; }
+  j.attempts.forEach(a => {
+    const div = document.createElement("div");
+    div.className = "border rounded p-2 mb-2";
+    div.innerHTML = `
+      <strong>${a.quiz}</strong> - Score: ${a.score} <br>
+      <small class="text-muted">${a.submitted_at || "in progress"}</small>
+    `;
+    container.appendChild(div);
+  });
+}
+
+// ---------- Load Notifications ----------
+async function loadStudentNotifications() {
+  const res = await fetch(NOTIF_UNREAD_URL);
+  const j = await res.json();
+  const list = document.getElementById("student-notifs");
+  list.innerHTML = "";
+  if (!j.ok) return;
+  j.notifications.forEach(n => {
+    const li = document.createElement("li");
+    li.className = "list-group-item d-flex justify-content-between align-items-start";
+    li.innerHTML = `
+      <div>
+        <div class="small text-muted">${new Date(n.created_at).toLocaleString()}</div>
+        <div class="mt-1">${n.message}</div>
+      </div>
+      <div>
+        <button class="btn btn-sm btn-outline-primary mark-read" data-id="${n.id}">Mark read</button>
+      </div>
+    `;
+    list.appendChild(li);
+  });
+
+  document.querySelectorAll(".mark-read").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      const id = e.currentTarget.dataset.id;
+      await fetch(NOTIF_MARK_READ_URL, {
+        method: "POST",
+        headers: {"Content-Type":"application/json","X-CSRFToken": csrftoken},
+        body: JSON.stringify({id})
+      });
+      e.currentTarget.closest("li").remove();
+    });
+  });
+}
+
+// ---------- Open Quiz Modal ----------
+async function openQuiz(quizId, mode="start") {
+  const res = await fetch(QUIZ_TAKE_URL + "?quiz_id=" + quizId + "&mode=" + mode);
+  const j = await res.json();
+  const modalBody = document.getElementById("quizModalBody");
+  const modalTitle = document.getElementById("quizModalTitle");
+  if (!j.ok) {
+    modalTitle.textContent = "Quiz Error";
+    modalBody.textContent = j.error || "Cannot load quiz.";
+  } else {
+    modalTitle.textContent = j.quiz_title;
+    modalBody.innerHTML = j.html; // server returns rendered form snippet
+  }
+  new bootstrap.Modal(document.getElementById("quizModal")).show();
+}
+
+// init
+loadStudentQuizzes();
+loadStudentAttempts();
+loadStudentNotifications();
+setInterval(loadStudentNotifications, 10000);
+{% comment %} Polling for attempts/quizzes could also be scheduled if desired {% endcomment %}
+</script>
 {% endblock %}

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="row ">
+<div class="mx-auto">
+<div class="container mt-4">
+    <h2 class="mb-3">🎓 Student Dashboard</h2>
+<!-- Notifications -->
+    <h5>📩 Notifications</h5>
+        <ul class="list-group mb-3">
+            {% for notif in notifications %}
+                <li class="list-group-item d-flex justify-content-between align-items-center
+                        {% if not notif.is_read %}list-group-item-warning{% endif %}">
+                {{ notif.message }}
+                <small class="text-muted">{{ notif.created_at|date:"M d, H:i" }}</small>
+
+                {% if not notif.is_read %}
+                    <a href="{% url 'mark_notification_read' notif.id %}" 
+                    class="btn btn-sm btn-outline-success">Mark as read</a>
+                {% endif %}
+                </li>
+            {% empty %}
+                <li class="list-group-item">No notifications yet.</li>
+            {% endfor %}
+        </ul>
+    </div>
+
+
+    <!-- Summary -->
+    <div class="card mb-4">
+        <div class="card-header">📊 Summary</div>
+        <div class="card-body">
+            <p>Total Exams Attempted: {{ total_attempts }}</p>
+            <p>Objective Results: {{ auto_graded_count }}</p>
+            <p>Pending Subjectives: {{ pending_subjectives }}</p>
+        </div>
+    </div>
+
+    <!-- Available Quizzes -->
+    <div class="card mb-4">
+        <div class="card-header">📝 Available Exams</div>
+        <div class="card-body">
+            <ul class="list-group">
+                {% for quiz in available_quizzes %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        {{ quiz.title }}
+                        <a href="{% url 'take_quiz' quiz.id %}" class="btn btn-sm btn-primary">Take Exam</a>
+                    </li>
+                        {% if quiz.allow_retake %}
+                    <li> <span class="badge">Retake Allowed</span>
+                        {% endif %}
+                        <a href="{% url 'take_quiz' quiz.id %}">Start Quiz</a>
+                    </li>
+                {% empty %}
+                    <li class="list-group-item">No Exams available.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+
+    <!-- Results Review -->
+    <div class="card mb-4">
+        <div class="card-header">📖 Review Wrong Answers</div>
+        <div class="card-body">
+            {% for attempt in quiz_attempts %}
+                <h6>{{ attempt.quiz.title }}</h6>
+                <ul>
+                    {% for wrong in attempt.wrong_answers %}
+                        <li>Q: {{ wrong.question.text }} <br>
+                            <strong>Your Answer:</strong> {{ wrong.your_answer }} <br>
+                            <strong>Correct Answer:</strong> {{ wrong.correct_answer }}
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% empty %}
+                <p>No attempts yet.</p>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Consolidated Results -->
+    <a href="{% url 'export_consolidated_pdf' %}" class="btn btn-success">
+        📥 Download Consolidated Results (PDF)
+    </a>
+</div>
+</div>
+{% endblock %}
