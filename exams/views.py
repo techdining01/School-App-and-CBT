@@ -1,43 +1,40 @@
-# exams/views.py — top of file (replace the current imports up to and including any User assignment)
-import io
-import json
-import os
-from datetime import datetime, timedelta
-
+from django.shortcuts import render, get_object_or_404, redirect
+from django.contrib import messages
+from django.utils import timezone
 from django.conf import settings
 from django.core.files.storage import FileSystemStorage
-from django.db import transaction
-from django.db.models import Sum, Avg, Count
-from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
-from django.shortcuts import render, get_object_or_404, redirect
-from django.template.loader import render_to_string
-from django.utils import timezone
-from django.views.decorators.http import require_POST
-from django.core.paginator import Paginator
-from django.contrib import messages
-
-# auth / user model — CORRECT: get_user_model()
-from django.contrib.auth import get_user_model
-User = get_user_model()
-
 from django.contrib.auth.decorators import login_required, user_passes_test
+from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
+from django.db.models import Sum, Avg, Count
+from django.template.loader import render_to_string
+from django.core.paginator import Paginator
+from django.views.decorators.http import require_POST
 
-# models & forms & utils
-from .models import (
-    Quiz, Question, Choice, StudentQuizAttempt, ActionLog,
-    Answer, Class, Subject
-)
-from users.models import Notification  # keep after User assignment
-from .utils import log_action
-from .forms import QuizCreateForm, QuestionForm, ChoiceForm
+import json, os, io
+import openpyxl
+from openpyxl import load_workbook
+from datetime import datetime, timedelta
 
-# reporting & excel libs
 from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
-import openpyxl
-from openpyxl import load_workbook
+from reportlab.lib.units import inch
+
+from django.db import transaction
+
+# ✅ Always use get_user_model
+from django.contrib.auth import get_user_model
+User = get_user_model()
+
+# Your models
+from .models import Quiz, Question, Choice, StudentQuizAttempt, ActionLog, Answer, Class, Subject
+from users.models import Notification
+from .utils import log_action
+from .forms import QuizCreateForm, QuestionForm, ChoiceForm
+
+
 
 
 
@@ -698,18 +695,6 @@ def student_dashboard_data(request):
     })
 
 
-# exams/views_notifications.py (or append to exams/views.py)
-
-import json
-from django.shortcuts import get_object_or_404, render
-from django.http import JsonResponse, HttpResponseForbidden
-from django.contrib.auth.decorators import login_required, user_passes_test
-from django.views.decorators.http import require_POST
-from django.utils import timezone
-
-from users.models import User, Notification
-from .models import ActionLog  # use your ActionLog from exams.models
-
 
 def _is_admin(user):
     return user.is_authenticated and user.role in ("admin", "superadmin")
@@ -943,14 +928,6 @@ def get_quizzes_with_status(student):
 
     return quizzes_with_status
 
-
-
-# exams/views/admin_retake.py
-from django.shortcuts import get_object_or_404
-from django.http import JsonResponse
-from django.contrib.auth.decorators import login_required, user_passes_test
-from .models import Quiz, StudentQuizAttempt, ActionLog, User
-from django.utils import timezone
 
 def is_admin(user):
     return user.is_authenticated and user.role in ["superadmin", "admin"]
@@ -1910,7 +1887,7 @@ def manage_quizzes_page(request):
         quizzes = Quiz.objects.all().order_by('-created_at')
     return render(request, "exams/manage_quizzes.html", {"quizzes": quizzes})
 
-# ---- AJAX publish toggle ----
+# ---- AJAX publish toggle ---old first----#
 @login_required
 @user_passes_test(is_teacher_or_admin)
 @require_POST

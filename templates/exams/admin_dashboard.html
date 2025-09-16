@@ -8,7 +8,7 @@
       <h3 class="d-inline ms-2 fw-bold">Admin Dashboard</h3>
     </div>
     <div class="d-flex align-items-center">
-        <a href="{% url 'manage_quizzes_page' %}" class="btn btn-outline-success btn-sm me-2">Approval</a>
+        <a href="{% url 'create_quiz_page' %}" class="btn btn-outline-success btn-sm me-2">Approval</a>
     </div>
   </div>
   <!-- Stats row -->
@@ -42,9 +42,7 @@
         <h4 class="mt-3 fw-bold">Exams Management</h4><br>
         <a href="{% url 'create_quiz' %}" class="btn btn-primary sm">Create Exam</a>
         <a href="{% url 'manage_quizzes' %}" class="btn btn-secondary sm">Manage Exams</a>
-        <a href="{% url 'upload_quiz_excel' %}" class="btn btn-info sm">Upload Exams from Excel</a>
-        <a href="{% url 'sample_quiz_excel' %}" class="btn btn-success sm">Download Sample Excel</a>
-
+      
         <br><br>    
         <!-- Quizzes list (paginated) -->
       <div class="card mb-3">
@@ -147,14 +145,14 @@ async function fetchDashboard(page_logs=1, page_quizzes=1) {
   // Stats
   const s = data.stats;
   document.getElementById("stats-container").innerHTML = `
-    <div class="col-md-2"><div class="card p-2 text-center">Total Users<br><strong>${s.total_users}</strong></div></div>
-    <div class="col-md-2"><div class="card p-2 text-center">Admins<br><strong>${s.admins}</strong></div></div>
-    <div class="col-md-2"><div class="card p-2 text-center">Teachers<br><strong>${s.teachers}</strong></div></div>
-    <div class="col-md-2"><div class="card p-2 text-center">Students<br><strong>${s.students}</strong></div></div>
-    <div class="col-md-2"><div class="card p-2 text-center">Pending<br><strong>${s.pending_users}</strong></div></div>
-    <div class="col-md-2"><div class="card p-2 text-center">Quizzes<br><strong>${s.quizzes}</strong></div></div>
-    <div class="col-md-2"><div class="card p-2 text-center">Quizzes<br><strong>${s.subjects}</strong></div></div>
-    <div class="col-md-2"><div class="card p-2 text-center">Quizzes<br><strong>${s.classes}</strong></div></div>
+    <div class="col-md-3"><div class="card p-2 text-center">Total Users<br><strong>${s.total_users}</strong></div></div>
+    <div class="col-md-3"><div class="card p-2 text-center">Admins<br><strong>${s.admins}</strong></div></div>
+    <div class="col-md-3"><div class="card p-2 text-center">Teachers<br><strong>${s.teachers}</strong></div></div>
+    <div class="col-md-3"><div class="card p-2 text-center">Students<br><strong>${s.students}</strong></div></div>
+    <div class="col-md-3"><div class="card p-2 text-center">Pending<br><strong>${s.pending_users}</strong></div></div>
+    <div class="col-md-3"><div class="card p-2 text-center">Quizzes<br><strong>${s.quizzes}</strong></div></div>
+    <div class="col-md-3"><div class="card p-2 text-center">Quizzes<br><strong>${s.subjects}</strong></div></div>
+    <div class="col-md-3"><div class="card p-2 text-center">Quizzes<br><strong>${s.classes}</strong></div></div>
     `;
 
   // Pending users

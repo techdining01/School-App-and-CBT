@@ -6,7 +6,6 @@ urlpatterns = [
     # path('', views.home, name='exam_home'),
 
     # Dashboards
-    # path('dashboard/admin/', views.admin_dashboard, name='admin_dashboard'),
     # path('dashboard/teacher/', views.teacher_dashboard, name='teacher_dashboard'),
     # path('dashboard/student/', views.student_dashboard, name='student_dashboard'),
     # path("admin/dashboard/", views.admin_dashboard, name="admin_dashboard"),
@@ -69,6 +68,7 @@ urlpatterns = [
 
     path("admin/dashboard/", views.admin_dashboard, name="admin_dashboard"),
     path("admin/dashboard/data/", views.admin_dashboard_data, name="admin_dashboard_data"),
+    path('dashboard/superadmin/', views.superadmin_dashboard, name='superadmin_dashboard'),
 
     path("teacher/dashboard/", views.teacher_dashboard, name="teacher_dashboard"),
     path("teacher/dashboard/data/", views.teacher_dashboard_data, name="teacher_dashboard_data"),

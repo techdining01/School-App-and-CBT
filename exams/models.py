@@ -2,8 +2,9 @@ from django.db import models
 from django.conf import settings
 from django.utils import timezone
 
-User = settings.AUTH_USER_MODEL
 
+# from django.contrib.auth import get_user_model
+# User = get_user_model()
 
 
 class Class(models.Model):
@@ -24,7 +25,7 @@ class Subject(models.Model):
 class Quiz(models.Model):
     title = models.CharField(max_length=200)
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name="quizzes")
-    created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name="created_quizzes")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="created_quizzes")
     created_at = models.DateTimeField(default=timezone.now)
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
@@ -62,7 +63,7 @@ class Choice(models.Model):
 
 
 class StudentQuizAttempt(models.Model):
-    student = models.ForeignKey(User, on_delete=models.CASCADE)
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     quiz = models.ForeignKey("Quiz", on_delete=models.CASCADE)
     started_at = models.DateTimeField(auto_now_add=True)
     end_time = models.DateTimeField(null=True, blank=True)  # quiz expiry
@@ -90,7 +91,7 @@ class Answer(models.Model):
     selected_choice = models.ForeignKey(Choice, on_delete=models.SET_NULL, null=True, blank=True)
     text_answer = models.TextField(blank=True, null=True)
     obtained_marks = models.FloatField(default=0.0)
-    graded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='graded_answers')
+    graded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='graded_answers')
     graded_at = models.DateTimeField(null=True, blank=True)
     feedback = models.TextField(blank=True, null=True)
     is_pending = models.BooleanField(default=False)  # True for subjective until graded
@@ -102,7 +103,7 @@ class Answer(models.Model):
 
 class ActionLog(models.Model):
     """Log significant actions performed by admins/teachers for audit"""
-    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     action = models.CharField(max_length=255)
     model_name = models.CharField(max_length=100, blank=True, null=True)
     object_id = models.CharField(max_length=255, blank=True, null=True)
