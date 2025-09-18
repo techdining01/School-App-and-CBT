@@ -2,30 +2,25 @@
 {% load static %}
 {% block content %}
 <div class="container mt-3">
-  <div class="d-flex justify-content-between align-items-center">
-    <h3>Teacher Dashboard</h3>
-    <div class="text-end">
-      <img src="{{ request.user.profile_picture.url if request.user.profile_picture else static('img/default_profile.png') }}"
-           alt="me" class="rounded-circle" style="height:36px;">
-      <div>{{ request.user.get_full_name }}</div>
-    </div>
+  <h2 class="mb-3 fw-bold"> 🧑‍🏫 Teacher Dashboard</h2>
+
   </div>
 
   <div class="row mt-3">
     <!-- Quizzes + Notifications -->
     <div class="col-md-7">
-      <h5>Your Quizzes</h5>
+      <h5 class="mb-3 fw-bold">Your Quizzes</h5>
       <div id="teacher-quizzes"></div>
 
       <hr>
-      <h5>Notifications</h5>
+      <h5 class="mb-3 fw-bold">Notifications</h5>
       <ul class="list-group" id="teacher-notifs"></ul>
     </div>
 
     <!-- Broadcast -->
     <div class="col-md-5">
       <div class="card p-3">
-        <h5>Broadcast to Students</h5>
+        <h5 class="mb-3 fw-bold">Broadcast to Students</h5>
         <div id="teacher-broadcast-alert" class="alert d-none" role="alert"></div>
         <form id="teacherBroadcastForm">
           <input type="hidden" name="role" value="student">
@@ -42,10 +37,10 @@
 
 {% block extra_js %}
 <script>
-const TEACHER_QUIZ_LIST_URL = "{% url 'exams:api_teacher_quizzes' %}";
-const TEACHER_BROADCAST_URL = "{% url 'exams:api_broadcast' %}";
-const NOTIF_UNREAD_URL = "{% url 'exams:api_notifications_unread' %}";
-const NOTIF_MARK_READ_URL = "{% url 'exams:api_notifications_mark_read' %}";
+const TEACHER_QUIZ_LIST_URL = "{% url 'api_teacher_quizzes' %}";
+const TEACHER_BROADCAST_URL = "{% url 'api_broadcast' %}";
+const NOTIF_UNREAD_URL = "{% url 'api_notifications_unread' %}";
+const NOTIF_MARK_READ_URL = "{% url 'api_notifications_mark_read' %}";
 const csrftoken = "{{ csrf_token }}";
 
 // Load teacher quizzes

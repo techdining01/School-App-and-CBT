@@ -27,12 +27,14 @@
 
     <div class="mt-3">
       <button type="submit" class="btn btn-primary">Register</button>
-      {% if user.role == "student" %}
+      {% if request.user.role == "student" %}
         <a href="{% url 'student_dashboard' %}" class="btn btn-secondary">Cancel</a>
-      {% elif user.role == "teacher" %}
+      {% elif request.user.role == "teacher" %}
         <a href="{% url 'teacher_dashboard' %}" class="btn btn-secondary">Cancel</a>
-      {% elif user.role == "admin" or user.role == 'superadmin' %}
+      {% elif request.user.role == "admin" %}
         <a href="{% url 'admin_dashboard' %}" class="btn btn-secondary">Cancel</a>
+      {% elif request.user.role == 'superadmin' %}  
+        <a href="{% url 'superadmin_dashboard' %}" class="btn btn-secondary">Cancel</a>
       {% else %}
         <a href="{% url 'home' %}" class="btn btn-secondary">Cancel</a>
       {% endif %}

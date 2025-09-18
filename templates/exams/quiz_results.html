@@ -1,0 +1,32 @@
+<!-- quiz_results.html -->
+<h4>Results for {{ quiz.title }}</h4>
+
+<p><b>Score:</b> {{ attempt.score }}/{{ attempt.total }}</p>
+
+<ul class="list-group">
+  {% for answer in attempt.answer_set.all %}
+    <li class="list-group-item">
+      <b>{{ answer.question.text }}</b><br>
+
+      {% if answer.question.type == "objective" or answer.question.type == "multiple_choice" %}
+        Your answer:
+        {% for choice in answer.question.choice_set.all %}
+          {% if choice.id|stringformat:"s" == answer.answer_text %}
+            <span class="text-primary">{{ choice.text }}</span>
+          {% endif %}
+        {% endfor %}
+        <br>
+        Correct answer:
+        <span class="text-success">{{ answer.question.correct_choice.text }}</span>
+      {% else %}
+        Your answer: <span class="text-primary">{{ answer.answer_text }}</span><br>
+        Teacher feedback: 
+        {% if answer.feedback %}
+          <span class="text-success">{{ answer.feedback }}</span>
+        {% else %}
+          <span class="text-muted">Pending grading</span>
+        {% endif %}
+      {% endif %}
+    </li>
+  {% endfor %}
+</ul>

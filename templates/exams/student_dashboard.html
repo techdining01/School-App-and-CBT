@@ -1,174 +1,143 @@
 {% extends "base.html" %}
-{% load static %}
 {% block content %}
-<div class="container mt-3">
-  <div class="d-flex justify-content-between">
-    <h3>Student Dashboard</h3>
-    <div>
-      <img src="{{ request.user.profile_picture.url if request.user.profile_picture else static('img/default_profile.png') }}"
-           alt="me" class="rounded-circle" style="height:36px;">
-    </div>
-  </div>
+<div class="container mt-4">
+    <h2>Student Dashboard</h2>
 
-  <div class="row mt-3">
-    <!-- Left: Quizzes and attempts -->
-    <div class="col-md-8">
-      <h5>Available Quizzes</h5>
-      <div id="student-quizzes"></div>
+    <!-- Quizzes Section -->
+    <h4>Available Quizzes</h4>
+    <ul id="quiz-list"></ul>
 
-      <hr>
-      <h5>Your Attempts</h5>
-      <div id="student-attempts"></div>
-    </div>
+    <!-- Attempts Section -->
+    <h4>Your Attempts</h4>
+    <ul id="attempt-list"></ul>
 
-    <!-- Right: Notifications -->
-    <div class="col-md-4">
-      <div class="card p-2">
-        <div class="d-flex justify-content-between align-items-center">
-          <strong>Messages</strong>
-          <small class="text-muted">Unread</small>
-        </div>
-        <ul class="list-group mt-2" id="student-notifs"></ul>
-      </div>
-    </div>
-  </div>
+    <!-- Notifications Section -->
+    <h4>Notifications</h4>
+    <ul id="notif-list"></ul>
+    <button id="mark-read">Mark all as read</button>
 </div>
 
-<!-- Quiz Modal -->
-<div class="modal fade" id="quizModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="quizModalTitle">Quiz</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body" id="quizModalBody">
-        <!-- Quiz will be loaded via AJAX -->
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-      </div>
+<div class="quiz-list" >
+  {% for quiz in quizzes %}
+    <div class="card mb-2 p-3">
+      <h5>{{ quiz.title }}</h5>
+      {% if quiz.attempted %}
+        <button 
+          class="btn btn-warning start-quiz-btn" 
+          data-url="{% url 'resume_quiz' quiz.id %}">
+          Resume Quiz
+        </button>
+      {% else %}
+        <button 
+          class="btn btn-success start-quiz-btn" 
+          data-url="{% url 'start_quiz' quiz.id %}">
+          Start Quiz
+        </button>
+      {% endif %}
     </div>
-  </div>
+  {% endfor %}
 </div>
-{% endblock %}
 
-{% block extra_js %}
+
 <script>
-const QUIZ_LIST_URL = "{% url 'exams:api_student_quizzes' %}";
-const ATTEMPT_LIST_URL = "{% url 'exams:api_student_attempts' %}";
-const NOTIF_UNREAD_URL = "{% url 'exams:api_notifications_unread' %}";
-const NOTIF_MARK_READ_URL = "{% url 'exams:api_notifications_mark_read' %}";
-const QUIZ_TAKE_URL = "{% url 'exams:api_take_quiz' %}";
-const csrftoken = "{{ csrf_token }}";
+const QUIZ_LIST_URL = "{% url 'api_student_quizzes' %}";
+const ATTEMPT_LIST_URL = "{% url 'api_student_attempts' %}";
+const NOTIF_UNREAD_URL = "{% url 'api_notifications_unread' %}";
+const NOTIF_MARK_READ_URL = "{% url 'api_notifications_mark_read' %}";
+const QUIZ_TAKE_URL = "{% url 'api_take_quiz' 0 %}".replace("/0/", "/"); // dynamic
 
-// ---------- Load Quizzes ----------
-async function loadStudentQuizzes() {
-  const res = await fetch(QUIZ_LIST_URL);
-  const j = await res.json();
-  const container = document.getElementById("student-quizzes");
-  container.innerHTML = "";
-  if (!j.ok) { container.textContent = "Error loading quizzes."; return; }
-  j.quizzes.forEach(q => {
-    const card = document.createElement("div");
-    card.className = "card mb-2";
-    card.innerHTML = `
-      <div class="card-body d-flex justify-content-between align-items-center">
-        <div>
-          <h6>${q.title}</h6>
-          <small class="text-muted">${q.subject}</small>
-        </div>
-        <div>
-          <button class="btn btn-sm btn-primary start-quiz" data-id="${q.id}">Start</button>
-          ${q.allow_retake ? `<button class="btn btn-sm btn-warning retake-quiz" data-id="${q.id}">Retake</button>` : ""}
-        </div>
-      </div>
-    `;
-    container.appendChild(card);
-  });
-
-  document.querySelectorAll(".start-quiz").forEach(btn => {
-    btn.addEventListener("click", () => openQuiz(btn.dataset.id, "start"));
-  });
-  document.querySelectorAll(".retake-quiz").forEach(btn => {
-    btn.addEventListener("click", () => openQuiz(btn.dataset.id, "retake"));
-  });
-}
-
-// ---------- Load Attempts ----------
-async function loadStudentAttempts() {
-  const res = await fetch(ATTEMPT_LIST_URL);
-  const j = await res.json();
-  const container = document.getElementById("student-attempts");
-  container.innerHTML = "";
-  if (!j.ok) { container.textContent = "Error loading attempts."; return; }
-  j.attempts.forEach(a => {
-    const div = document.createElement("div");
-    div.className = "border rounded p-2 mb-2";
-    div.innerHTML = `
-      <strong>${a.quiz}</strong> - Score: ${a.score} <br>
-      <small class="text-muted">${a.submitted_at || "in progress"}</small>
-    `;
-    container.appendChild(div);
-  });
-}
-
-// ---------- Load Notifications ----------
-async function loadStudentNotifications() {
-  const res = await fetch(NOTIF_UNREAD_URL);
-  const j = await res.json();
-  const list = document.getElementById("student-notifs");
-  list.innerHTML = "";
-  if (!j.ok) return;
-  j.notifications.forEach(n => {
-    const li = document.createElement("li");
-    li.className = "list-group-item d-flex justify-content-between align-items-start";
-    li.innerHTML = `
-      <div>
-        <div class="small text-muted">${new Date(n.created_at).toLocaleString()}</div>
-        <div class="mt-1">${n.message}</div>
-      </div>
-      <div>
-        <button class="btn btn-sm btn-outline-primary mark-read" data-id="${n.id}">Mark read</button>
-      </div>
-    `;
-    list.appendChild(li);
-  });
-
-  document.querySelectorAll(".mark-read").forEach(btn => {
-    btn.addEventListener("click", async (e) => {
-      const id = e.currentTarget.dataset.id;
-      await fetch(NOTIF_MARK_READ_URL, {
-        method: "POST",
-        headers: {"Content-Type":"application/json","X-CSRFToken": csrftoken},
-        body: JSON.stringify({id})
-      });
-      e.currentTarget.closest("li").remove();
+// Fetch quizzes
+fetch(QUIZ_LIST_URL).then(res=>res.json()).then(data=>{
+    let ul = document.getElementById("quiz-list");
+    data.quizzes.forEach(q=>{
+        ul.innerHTML += `<li>
+            ${q.title} (${q.subject}) - Due: ${q.end_time}
+            <a href="/quiz/${q.id}/take/">Take</a>
+        </li>`;
     });
+});
+
+// Fetch attempts
+fetch(ATTEMPT_LIST_URL).then(res=>res.json()).then(data=>{
+    let ul = document.getElementById("attempt-list");
+    data.attempts.forEach(a=>{
+        ul.innerHTML += `<li>${a.quiz} - Score: ${a.score} 
+            <a href="/quiz/${a.id}/review/">Review</a>
+        </li>`;
+    });
+});
+
+// Fetch notifications
+fetch(NOTIF_UNREAD_URL).then(res=>res.json()).then(data=>{
+    let ul = document.getElementById("notif-list");
+    data.notifications.forEach(n=>{
+        ul.innerHTML += `<li>${n.message} (${n.created_at})</li>`;
+    });
+});
+
+// Mark read
+document.getElementById("mark-read").addEventListener("click", ()=>{
+    fetch(NOTIF_MARK_READ_URL).then(()=>alert("All notifications marked as read"));
+});
+</script>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+$(document).on("click", ".start-quiz-btn", function () {
+  let url = $(this).data("url");
+
+  $.ajax({
+    url: url,
+    type: "GET",
+    success: function (data) {
+      $("#quizModalBody").html(data.html_form);
+      $("#quizModal").modal("show");
+    }
+  });
+});
+</script>
+
+
+<script>
+function loadQuizzes() {
+  $.get("{% url 'api_student_quizzes' %}", function(data){
+    let html = "<ul class='list-group'>";
+      data.quizzes.forEach(q => {
+      let btnClass = "btn-primary";
+      let btnText = "Start";
+      
+      if (q.status === "in_progress") {
+        btnClass = "btn-warning";
+        btnText = "Resume";
+      } else if (q.status === "completed") {
+        btnClass = "btn-success";
+        btnText = "Completed";
+      }
+
+      html += `
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+          ${q.title}
+          <button class="btn ${btnClass}" onclick="openQuiz(${q.id})">${btnText}</button>
+        </li>`;
+    });
+    html += "</ul>";
+    $("#quizList").html(html);
   });
 }
 
-// ---------- Open Quiz Modal ----------
-async function openQuiz(quizId, mode="start") {
-  const res = await fetch(QUIZ_TAKE_URL + "?quiz_id=" + quizId + "&mode=" + mode);
-  const j = await res.json();
-  const modalBody = document.getElementById("quizModalBody");
-  const modalTitle = document.getElementById("quizModalTitle");
-  if (!j.ok) {
-    modalTitle.textContent = "Quiz Error";
-    modalBody.textContent = j.error || "Cannot load quiz.";
-  } else {
-    modalTitle.textContent = j.quiz_title;
-    modalBody.innerHTML = j.html; // server returns rendered form snippet
-  }
-  new bootstrap.Modal(document.getElementById("quizModal")).show();
+function openQuiz(quizId){
+  $.get(`/quiz/${quizId}/form/`, function(html){
+    $("#quizModalContent").html(html);
+    $("#quizModal").modal("show");
+  });
 }
 
-// init
-loadStudentQuizzes();
-loadStudentAttempts();
-loadStudentNotifications();
-setInterval(loadStudentNotifications, 10000);
-{% comment %} Polling for attempts/quizzes could also be scheduled if desired {% endcomment %}
+function refreshStudentDashboard(){
+  loadQuizzes();
+}
+
+$(document).ready(function(){
+  loadQuizzes();
+});
 </script>
+
 {% endblock %}

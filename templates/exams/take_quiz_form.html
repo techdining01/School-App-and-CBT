@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Take Quiz: {{ quiz.title }}</h2>
+
+<form method="post">
+  {% csrf_token %}
+  {% for q in quiz.question_set.all %}
+    <div class="mb-3">
+      <p><b>{{ forloop.counter }}. {{ q.text }}</b></p>
+
+      {% if q.type == "objective" %}
+        {% for choice in q.choice_set.all %}
+          <label>
+            <input type="radio" name="q{{ q.id }}" value="{{ choice.id }}">
+            {{ choice.text }}
+          </label><br>
+        {% endfor %}
+
+      {% elif q.type == "multiple_choice" %}
+        {% for choice in q.choice_set.all %}
+          <label>
+            <input type="checkbox" name="q{{ q.id }}" value="{{ choice.id }}">
+            {{ choice.text }}
+          </label><br>
+        {% endfor %}
+
+      {% elif q.type == "subjective" %}
+        <textarea class="form-control" name="q{{ q.id }}" rows="3"></textarea>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  <button type="submit" class="btn btn-primary">Submit Quiz</button>
+</form>
+{% endblock %}

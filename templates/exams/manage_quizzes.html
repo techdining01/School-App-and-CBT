@@ -58,7 +58,7 @@
 
   document.querySelectorAll('.delete-btn').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
-      if (!confirm('Delete this quiz?')) return;
+      if (!confirm('Delete this Exam?')) return;
       const id = btn.dataset.id;
       try {
         const res = await fetch(`/exams/api/${id}/delete/`, { method: 'POST', headers: {'X-CSRFToken': csrftoken} });

@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="container mt-4">
+  <h2 class="mb-3 fw-bold" style="font:2rem"> 🎓 Student Dashboard</h2>
+
+  <!-- Notifications -->
+  <div class="card mb-3">
+    <div class="card-header">Notifications</div>
+    <div class="card-body" id="notifications-area">
+      <ul id="notifications-list" class="list-group"></ul>
+    </div>
+  </div>
+<form style="display:none;">{% csrf_token %}</form>
+
+  <!-- Available Quizzes -->
+  <div class="card mb-3">
+    <div class="card-header">Available Quizzes</div>
+    <div class="card-body">
+      <table class="table table-striped" id="quiz-table">
+        <thead>
+          <tr>
+            <th>Quiz Title</th>
+            <th>Subject</th>
+            <th>Created By</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Previous Attempts -->
+  <div class="card">
+    <div class="card-header">My Attempts</div>
+    <div class="card-body">
+      <table class="table table-bordered" id="attempts-table">
+        <thead>
+          <tr>
+            <th>Quiz</th>
+            <th>Score</th>
+            <th>Status</th>
+            <th>Completed At</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Quiz Modal -->
+<div class="modal fade" id="quizModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog modal-xl" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Take Quiz</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close" onclick="closeQuizModal()">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body" id="quiz-modal-body">
+        <!-- Quiz form will be loaded here via AJAX -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const QUIZ_LIST_URL = "{% url 'api_student_quizzes' %}";
+const ATTEMPT_LIST_URL = "{% url 'api_student_attempts' %}";
+const NOTIF_UNREAD_URL = "{% url 'api_notifications_unread' %}";
+const NOTIF_MARK_READ_URL = "{% url 'api_notifications_mark_read' %}";
+const QUIZ_TAKE_URL = "{% url 'api_take_quiz' %}";
+
+// Load Notifications
+function loadNotifications() {
+  fetch(NOTIF_UNREAD_URL)
+    .then(res => res.json())
+    .then(data => {
+      const list = document.getElementById("notifications-list");
+      list.innerHTML = "";
+      if (data.notifications.length === 0) {
+        list.innerHTML = "<li class='list-group-item'>No new notifications</li>";
+      } else {
+        data.notifications.forEach(n => {
+          const li = document.createElement("li");
+          li.classList.add("list-group-item", "d-flex", "justify-content-between", "align-items-center");
+          li.innerHTML = `
+            ${n.message}
+            <button class="btn btn-sm btn-primary" onclick="markRead(${n.id})">Mark Read</button>
+          `;
+          list.appendChild(li);
+        });
+      }
+    });
+}
+function markRead(id) {
+  fetch(NOTIF_MARK_READ_URL, {
+    method: "POST",
+    headers: {"Content-Type": "application/json", "X-CSRFToken": getCSRFToken()},
+    body: JSON.stringify({id})
+  }).then(() => loadNotifications());
+}
+
+// Load Quizzes
+function loadQuizzes() {
+  fetch(QUIZ_LIST_URL)
+    .then(res => res.json())
+    .then(data => {
+      const tbody = document.querySelector("#quiz-table tbody");
+      tbody.innerHTML = "";
+      data.quizzes.forEach(q => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${q.title}</td>
+          <td>${q.subject}</td>
+          <td>${q.created_by}</td>
+          <td>
+            <button class="btn btn-sm btn-success" onclick="openQuiz(${q.id})">Start</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    });
+}
+
+// Load Attempts
+function loadAttempts() {
+  fetch(ATTEMPT_LIST_URL)
+    .then(res => res.json())
+    .then(data => {
+      const tbody = document.querySelector("#attempts-table tbody");
+      tbody.innerHTML = "";
+      data.attempts.forEach(a => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${a.quiz}</td>
+          <td>${a.score ?? "-"}</td>
+          <td>${a.completed ? "Completed" : "In Progress"}</td>
+          <td>${a.completed_at ?? "-"}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    });
+}
+
+// Open Quiz in Modal
+function openQuiz(quizId) {
+  fetch(QUIZ_TAKE_URL + "?quiz_id=" + quizId)
+    .then(res => res.text())
+    .then(html => {
+      document.getElementById("quiz-modal-body").innerHTML = html;
+      $('#quizModal').modal('show');
+    });
+}
+function closeQuizModal() {
+  $('#quizModal').modal('hide');
+}
+
+// CSRF Helper
+function getCSRFToken() {
+  return document.querySelector('[name=csrfmiddlewaretoken]').value;
+}
+
+// Auto load data
+document.addEventListener("DOMContentLoaded", () => {
+  loadNotifications();
+  loadQuizzes();
+  loadAttempts();
+});
+</script>
+{% endblock %}

@@ -5,7 +5,7 @@
 <div class="container mt-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
-      <h3 class="d-inline ms-2 fw-bold">Admin Dashboard</h3>
+      <h3 class="d-inline ms-2 fw-bold"> 🛠️ Admin Dashboard</h3>
     </div>
     <div class="d-flex align-items-center">
         <a href="{% url 'create_quiz_page' %}" class="btn btn-outline-success btn-sm me-2">Approval</a>
@@ -29,21 +29,8 @@
           </table>
         </div>
       </div>
-      <br>
-
-       <!-- User/Quiz Management -->
-        <!-- Quiz Management -->
-        
-        
-        <h4 class="mt-3 fw-bold">User Management</h4><br>
-        <a href="{% url 'create_user' %}" class="btn btn-primary sm">Create User</a>
-        <a href="{% url 'manage_users' %}" class="btn btn-secondary sm">Manage Users</a><br><br>
-        
-        <h4 class="mt-3 fw-bold">Exams Management</h4><br>
-        <a href="{% url 'create_quiz' %}" class="btn btn-primary sm">Create Exam</a>
-        <a href="{% url 'manage_quizzes' %}" class="btn btn-secondary sm">Manage Exams</a>
-      
-        <br><br>    
+      {% comment %} <br> {% endcomment %}
+   
         <!-- Quizzes list (paginated) -->
       <div class="card mb-3">
         <div class="card-header"><strong>Available Exams</strong></div>
@@ -106,6 +93,35 @@
       </div>
     </div>
   </div>
+  
+       <!-- User/Quiz Management -->
+        <!-- Quiz Management -->
+    <div class='row'>
+      <div class="col-md-6">    
+        <div class="card mt-3">
+          <div class="card-header d-flex justify-content-between">
+            <strong>User Management</strong>
+          </div>
+          <div class="card-body">
+            <a href="{% url 'create_user' %}" class="btn btn-primary sm">Create User</a>
+            <a href="{% url 'manage_users' %}" class="btn btn-secondary sm">Manage Users</a><br><br>
+          </div>
+        </div>
+      </div>
+
+        
+    <div class="col-md-6"> 
+      <div class="card mt-3">
+        <div class="card-header d-flex justify-content-between">
+          <strong>Exams Management</strong>
+        </div>
+          <div class="card-body">
+            <a href="{% url 'create_quiz' %}" class="btn btn-primary sm">Create Exam</a>
+            <a href="{% url 'manage_quizzes' %}" class="btn btn-secondary sm">Manage Exams</a>
+          </div>
+      </div>
+    </div> 
+  </div>  
 
   <!-- Recent actions (paginated) -->
   <div class="card mt-3">
@@ -151,8 +167,8 @@ async function fetchDashboard(page_logs=1, page_quizzes=1) {
     <div class="col-md-3"><div class="card p-2 text-center">Students<br><strong>${s.students}</strong></div></div>
     <div class="col-md-3"><div class="card p-2 text-center">Pending<br><strong>${s.pending_users}</strong></div></div>
     <div class="col-md-3"><div class="card p-2 text-center">Quizzes<br><strong>${s.quizzes}</strong></div></div>
-    <div class="col-md-3"><div class="card p-2 text-center">Quizzes<br><strong>${s.subjects}</strong></div></div>
-    <div class="col-md-3"><div class="card p-2 text-center">Quizzes<br><strong>${s.classes}</strong></div></div>
+    <div class="col-md-3"><div class="card p-2 text-center">Subjects<br><strong>${s.subjects}</strong></div></div>
+    <div class="col-md-3"><div class="card p-2 text-center">Classes<br><strong>${s.classes}</strong></div></div>
     `;
 
   // Pending users
@@ -179,11 +195,13 @@ async function fetchDashboard(page_logs=1, page_quizzes=1) {
     quizzesHtml += `
       <div class="border p-2 mb-2">
         <div class="d-flex justify-content-between">
-          <div><strong>${q.title}</strong> <div class="small text-muted">${q.subject} • ${q.class_name}</div></div>
+          <div><strong>${q.title}</strong> <div class="small text-muted">${q.subject} • ${q.subject__school_class}</div></div>
           <div>
             <small class="d-block">By ${q.created_by}</small>
             <small class="d-block">${new Date(q.start_time).toLocaleString()} - ${new Date(q.end_time).toLocaleString()}</small>
-            <button class="btn btn-sm btn-outline-primary mt-1" onclick="togglePublish(${q.id}, ${q.is_published})">${q.is_published ? 'Unpublish' : 'Publish'}</button>
+            <button id="publish-btn-${q.id}" class="btn btn-sm ${q.is_published ? 'btn-outline-danger' : 'btn-outline-primary'} mt-1" onclick="togglePublish(${q.id})">${q.is_published ? "Unpublish" : "Publish"}</button>
+            <a href="/exams/manage_quizzes/${q.id}/" class="btn btn-sm btn-outline-secondary mt-1">View</a>
+
           </div>
         </div>
       </div>
@@ -221,7 +239,7 @@ async function fetchDashboard(page_logs=1, page_quizzes=1) {
   document.getElementById("admin-notifications").innerHTML = notifHtml;
 
   // Class performance chart
-  const labels = data.class_performance.map(c => c.class_name);
+  const labels = data.class_performance.map(c => c.name);
   const values = data.class_performance.map(c => c.avg_score);
   const ctx = document.getElementById("classPerformanceChart").getContext("2d");
   if (classChart) classChart.destroy();
@@ -298,11 +316,12 @@ document.getElementById("downloadExcel").addEventListener("click", async functio
   fetchDashboard();
 });
 
-// publish toggle (optional helper)
+{% comment %} // publish toggle (optional helper)
 async function togglePublish(quizId, currentlyPublished) {
   // you need a separate API to toggle publish; for demo we just alert
   alert("Publishing/Unpublishing quiz not wired here. Add endpoint to toggle publish.");
-}
+ 
+} {% endcomment %}
 
 // logs page input
 document.getElementById("logsPage").addEventListener("change", function(){
@@ -334,6 +353,124 @@ function loadAdminDashboard() {
 }
 loadAdminDashboard();
 setInterval(loadAdminDashboard, 5000);
+
+
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== "") {
+    const cookies = document.cookie.split(";");
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim();
+      if (cookie.substring(0, name.length + 1) === (name + "=")) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+
+
+async function togglePublish(quizId) {
+  try {
+    const response = await fetch(`/quiz/${quizId}/toggle_publish/`, {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": getCookie("csrftoken"),
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({})
+    });
+
+    if (!response.ok) throw new Error("Network error");
+
+    const data = await response.json();
+
+    if (data.success) {
+      // Instead of updating just the button, refresh full quiz list
+      await refreshQuizList();
+    } else {
+      alert("Failed to update quiz status: " + data.error);
+    }
+  } catch (error) {
+    console.error("Error toggling publish:", error);
+    alert("Error updating quiz status.");
+  }
+
+
+async function refreshQuizList() {
+  try {
+    const response = await fetch("/api/student/quizzes/");
+    if (!response.ok) throw new Error("Network error");
+    const data = await response.json();
+
+    let quizzesHtml = "";
+    data.quizzes.forEach(q => {
+      quizzesHtml += `
+        <div class="border p-2 mb-2">
+          <div class="d-flex justify-content-between">
+            <div>
+              <strong>${q.title}</strong>
+              <div class="small text-muted">${q.subject} • ${q.class_name}</div>
+            </div>
+            <div>
+              <small class="d-block">By ${q.created_by || "Teacher"}</small>
+              <small class="d-block">${new Date(q.start_time).toLocaleString()} - ${new Date(q.end_time).toLocaleString()}</small>
+              <button id="publish-btn-${q.id}" 
+                      class="btn btn-sm ${q.is_published ? 'btn-outline-danger' : 'btn-outline-primary'} mt-1" 
+                      onclick="togglePublish(${q.id})">
+                ${q.is_published ? "Unpublish" : "Publish"}
+              </button>
+              <button class="btn btn-sm btn-info mt-1" onclick="viewQuizDetail(${q.id})">View</button>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    document.getElementById("quizzes-list").innerHTML = quizzesHtml;
+  } catch (error) {
+    console.error("Error loading quizzes:", error);
+  }
+}
+
+
+async function viewQuizDetail(quizId) {
+  try {
+    const response = await fetch(`/quiz/${quizId}/detail/`);
+    if (!response.ok) throw new Error("Network error");
+    const data = await response.json();
+
+    if (data.ok) {
+      const q = data.quiz;
+      document.getElementById("quizDetailModalBody").innerHTML = `
+        <h5>${q.title}</h5>
+        <p><strong>Subject:</strong> ${q.subject}</p>
+        <p><strong>Class:</strong> ${q.class_name}</p>
+        <p><strong>Created by:</strong> ${q.created_by}</p>
+        <p><strong>Duration:</strong> ${q.duration_minutes} min</p>
+        <p><strong>Available:</strong> ${new Date(q.start_time).toLocaleString()} – ${new Date(q.end_time).toLocaleString()}</p>
+        <p><strong>Status:</strong> ${q.is_published ? "Published ✅" : "Unpublished ❌"}</p>
+      `;
+      new bootstrap.Modal(document.getElementById("quizDetailModal")).show();
+    } else {
+      alert(data.error);
+    }
+  } catch (error) {
+    console.error("Error loading quiz detail:", error);
+  }
+}
+
+
+
+
+
+}
+
+
+
+
+
 </script>
 
 {% endblock %}

@@ -2,24 +2,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # # Homepage
-    # path('', views.home, name='exam_home'),
-
-    # Dashboards
-    # path('dashboard/teacher/', views.teacher_dashboard, name='teacher_dashboard'),
-    # path('dashboard/student/', views.student_dashboard, name='student_dashboard'),
-    # path("admin/dashboard/", views.admin_dashboard, name="admin_dashboard"),
-    # path("admin/dashboard/data/", views.admin_dashboard_data, name="admin_dashboard_data"),
-    # AJAX endpoints
-    # path('ajax/student-summary/', views.ajax_student_summary, name='ajax_student_summary'),
-    # path('ajax/teacher-pending/', views.ajax_teacher_pending_subjectives, name='ajax_teacher_pending_subjectives'),
-
-    # PDF
-    # path('export/consolidated-pdf/', views.consolidated_results_pdf, name='export_consolidated_pdf'),
-    # path("results/pdf/", views.student_consolidated_results_pdf, name="consolidated_results_pdf"),
-    # path("teacher/results/pdf/", views.teacher_class_results_pdf, name="teacher_class_results_pdf"),
-    # path("admin/results/pdf/", views.admin_overall_results_pdf, name="admin_overall_results_pdf"),
-
+   
     # Create quiz page (manual + excel)
     path("create/", views.create_quiz_page, name="create_quiz_page"),
     # AJAX JSON create
@@ -57,8 +40,8 @@ urlpatterns = [
     path("quiz/<int:quiz_id>/approve-retake/<int:student_id>/", views.approve_retake, name="approve_retake"),
 
     # User management
-    path("admin/users/", views.manage_users, name="manage_users"),
-    path("admin/users/create/", views.create_user, name="create_user"),
+    # path("admin/users/", views.manage_users, name="manage_users"),
+    # path("admin/users/create/", views.create_user, name="create_user"),
 
     # Quiz management
     path("admin/quizzes/", views.manage_quizzes, name="manage_quizzes"),
@@ -73,20 +56,27 @@ urlpatterns = [
     path("teacher/dashboard/", views.teacher_dashboard, name="teacher_dashboard"),
     path("teacher/dashboard/data/", views.teacher_dashboard_data, name="teacher_dashboard_data"),
 
-    path("student/dashboard/", views.student_dashboard, name="student_dashboard"),
-    path("student/dashboard/data/", views.student_dashboard_data, name="student_dashboard_data"),
+    # path("student/dashboard/", views.student_dashboard, name="student_dashboard"),
+    # path("student/dashboard/data/", views.student_dashboard_data, name="student_dashboard_data"),
 
-     # broadcast + notifications API endpoints
-    path("api/broadcast/", views.api_broadcast, name="api_broadcast"),
-    path("api/notifications/unread/", views.api_notifications_unread, name="api_notifications_unread"),
-    path("api/notifications/mark-read/", views.api_notifications_mark_read, name="api_notifications_mark_read"),
+    #  # broadcast + notifications API endpoints
+    # path("api/broadcast/", views.api_broadcast, name="api_broadcast"),
+    # path("api/notifications/unread/", views.api_notifications_unread, name="api_notifications_unread"),
+    # path("api/notifications/mark-read/", views.api_notifications_mark_read, name="api_notifications_mark_read"),
+
+
+
+   path('dashboard/', views.student_dashboard, name='student_dashboard'),
+
+    # API endpoints used by fetch in the template
+    path('api/student/quizzes/', views.api_student_quizzes, name='api_student_quizzes'),
+    path('api/student/attempts/', views.api_student_attempts, name='api_student_attempts'),
+    path('api/student/notifications/unread/', views.api_notifications_unread, name='api_notifications_unread'),
+    path('api/student/notifications/mark-read/', views.api_notifications_mark_read, name='api_notifications_mark_read'),
+    path('api/student/take-quiz/', views.api_take_quiz, name='api_take_quiz'),
+    path("quiz/<int:quiz_id>/toggle_publish/", views.toggle_quiz_publish, name="toggle_quiz_publish"),
+    path("quiz/<int:quiz_id>/detail/", views.quiz_detail, name="quiz_detail"),
+
+    
 
 ]
-
-    # start, autosave, submit
-    # path("api/<int:quiz_id>/start_attempt/", views.start_attempt, name="start_attempt"),
-    # path("api/attempts/<int:attempt_id>/autosave/", views.autosave_attempt, name="autosave_attempt"),
-    # path("api/attempts/<int:attempt_id>/submit/", views.submit_attempt, name="submit_attempt"),
-    # path('broadcast/', views.broadcast, name='broadcast'),
-    # path('grade/answer/<int:answer_id>/', views.grade_answer, name='grade_answer'),
-    

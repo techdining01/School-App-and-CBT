@@ -39,7 +39,8 @@
                 {% endif %}
                 <div class="ms-2 g-5">
                     <div class='fw-bold'>{{ request.user.get_full_name }}</div>
-                    <small class="text-muted fw-bold">{{ request.user.role }}</small>
+                    <small class="text-muted fw-bold">{{ request.user.role.title }}</small>
+                    <small class="text-muted fw-bold">{{ request.user.student_class }}</small>
                 </div>
                 <a href="{% url 'logout' %}" class="btn btn-outline-danger btn-sm me-2">Logout</a>
             {% else %}
