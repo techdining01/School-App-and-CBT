@@ -141,6 +141,9 @@ class ActionLog(models.Model):
         ('grade', 'Grade'),
         ('review', 'Review'),
         ('notification', 'Notification'),
+        ('pended', 'Pended'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
     )
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="action_logs")
     action_type = models.CharField(max_length=50, choices=ACTION_TYPES)

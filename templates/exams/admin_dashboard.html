@@ -168,7 +168,7 @@ async function fetchDashboard(page_logs=1, page_quizzes=1) {
   const url = new URL(DATA_URL, window.location.origin);
   url.searchParams.set("logs_page", page_logs);
   url.searchParams.set("quizzes_page", page_quizzes);
-  url.searchParams.set("logs_page_size", 10);
+  url.searchParams.set("logs_page_size", 5);
   url.searchParams.set("quizzes_page_size", 6);
 
   const res = await fetch(url);
@@ -269,7 +269,7 @@ async function updateUserStatus(userId, status) {
   const resp = await fetch(DATA_URL, {
     method: "POST",
     headers: {"Content-Type":"application/json", "X-CSRFToken": csrftoken},
-    body: JSON.stringify({action: "update_user_status", user_id: userId, status: status})
+    body: JSON.stringify({action_type: "update_user_status", user_id: userId, status: status})
   });
   const d = await resp.json();
   if (d.ok) {
@@ -289,7 +289,7 @@ document.getElementById("broadcastForm").addEventListener("submit", async functi
   const resp = await fetch(DATA_URL, {
     method: "POST",
     headers: {"Content-Type":"application/json", "X-CSRFToken": csrftoken},
-    body: JSON.stringify({action: "broadcast", role: role, message: message})
+    body: JSON.stringify({action_type: "broadcast", role: role, message: message})
   });
   const d = await resp.json();
   if (d.ok) {
@@ -303,11 +303,11 @@ document.getElementById("broadcastForm").addEventListener("submit", async functi
 
 // Download buttons
 document.getElementById("downloadPdf").addEventListener("click", async function(){
-  // POST action download format pdf -> returns PDF stream
+  // POST action_type download format pdf -> returns PDF stream
   const resp = await fetch(DATA_URL, {
     method: "POST",
     headers: {"Content-Type":"application/json", "X-CSRFToken": csrftoken},
-    body: JSON.stringify({action:"download", format:"pdf"})
+    body: JSON.stringify({action_type:"download", format:"pdf"})
   });
   if (!resp.ok) { const j = await resp.json().catch(()=>({})); alert(j.error||"Download failed"); return; }
   const blob = await resp.blob();
@@ -321,7 +321,7 @@ document.getElementById("downloadExcel").addEventListener("click", async functio
   const resp = await fetch(DATA_URL, {
     method: "POST",
     headers: {"Content-Type":"application/json", "X-CSRFToken": csrftoken},
-    body: JSON.stringify({action:"download", format:"excel"})
+    body: JSON.stringify({action_type:"download", format:"excel"})
   });
   if (!resp.ok) { const j = await resp.json().catch(()=>({})); alert(j.error||"Download failed"); return; }
   const blob = await resp.blob();

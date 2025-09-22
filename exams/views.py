@@ -340,19 +340,19 @@ def admin_dashboard_data(request):
     if request.user.role not in ("admin", "superadmin", "teacher"):
         return JsonResponse({"error": "forbidden"}, status=403)
 
-    # Handle POST actions: approve/reject/pending user, broadcast, download
+    # Handle POST actions: approve/reject/pending user, broadcast, download, etc
     if request.method == "POST":
         try:
             payload = json.loads(request.body.decode())
         except Exception:
             return JsonResponse({"error": "invalid JSON"}, status=400)
 
-        action = payload.get("action")
+        action_type = payload.get("action_type")
 
         # ---------------------------
         # Approve / Reject / Pend user
         # ---------------------------
-        if action == "update_user_status":
+        if action_type == "update_user_status":
             if request.user.role not in ("admin", "superadmin"):
                 return JsonResponse({"error": "forbidden"}, status=403)
             user_id = payload.get("user_id")
@@ -372,7 +372,7 @@ def admin_dashboard_data(request):
             # Log action
             ActionLog.objects.create(
                 user=request.user,
-                action=f"Updated user status -> {new_status}",
+                action_type=f"Updated user status -> {new_status}",
                 model_name="User",
                 object_id=str(target_user.id),
                 details={"old_approved": old_approved, "new_approved": target_user.approved},
@@ -382,7 +382,7 @@ def admin_dashboard_data(request):
         # ---------------------------
         # Broadcast (admin can to teachers/students; teacher can to students only)
         # ---------------------------
-        if action == "broadcast":
+        if action_type == "broadcast":
             role = payload.get("role")  # 'teacher' or 'student'
             message = payload.get("message", "").strip()
             if not role or not message:
@@ -398,7 +398,7 @@ def admin_dashboard_data(request):
                 created += 1
                 ActionLog.objects.create(
                 user=request.user,
-                action="Broadcast",
+                action_type="Broadcast",
                 model_name="Notification",
                 object_id="bulk",
                 details={"role": role, "count": created, "message": message[:200]},
@@ -409,7 +409,7 @@ def admin_dashboard_data(request):
         # Download all attempts (excel or pdf)
         # payload: {action: "download", format: "pdf"|"excel"}
         # ---------------------------
-        if action == "download":
+        if action_type == "download":
             if request.user.role not in ("admin", "superadmin"):
                 return JsonResponse({"error": "forbidden"}, status=403)
 
@@ -489,7 +489,7 @@ def admin_dashboard_data(request):
 
     # Action logs paginated
     logs_page = int(request.GET.get("logs_page", 1))
-    logs_page_size = int(request.GET.get("logs_page_size", 10))
+    logs_page_size = int(request.GET.get("logs_page_size", 5))
     logs_qs = ActionLog.objects.order_by("-timestamp")
     paginator_logs = Paginator(logs_qs, logs_page_size)
     page_logs = paginator_logs.get_page(logs_page)

@@ -105,9 +105,9 @@ def edit_user(request, user_id):
             messages.success(request, "Profile updated successfully!")
 
             # Redirect back to dashboard
-            if user.role == "student":
+            if user.is_authenticated == "student":
                 return redirect("student_dashboard")
-            elif user.role == "teacher":
+            elif user.is_authenticated == "teacher":
                 return redirect("teacher_dashboard")
             else:
                 return redirect("admin_dashboard")
@@ -242,7 +242,7 @@ def update_user(request, user_id):
     # Log action
     ActionLog.objects.create(
         user=request.user,
-        action="Edited user",
+        action_type="Edited user",
         model_name="User",
         object_id=user.id,
         details={
@@ -274,7 +274,7 @@ def delete_user(request, user_id):
     # Log action
     ActionLog.objects.create(
         user=request.user,
-        action="Deleted user",
+        action_type="Deleted user",
         model_name="User",
         object_id=user_id,
         details=user_data,
