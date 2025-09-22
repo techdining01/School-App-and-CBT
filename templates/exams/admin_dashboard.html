@@ -8,7 +8,7 @@
       <h3 class="d-inline ms-2 fw-bold"> 🛠️ Admin Dashboard</h3>
     </div>
     <div class="d-flex align-items-center">
-        <a href="{% url 'create_quiz_page' %}" class="btn btn-outline-success btn-sm me-2">Approval</a>
+        <a href="{% url 'manage_quizzes' %}" class="btn btn-success btn-sm me-2">Advance</a>
     </div>
   </div>
   <!-- Stats row -->
@@ -29,7 +29,7 @@
           </table>
         </div>
       </div>
-      {% comment %} <br> {% endcomment %}
+     
    
         <!-- Quizzes list (paginated) -->
       <div class="card mb-3">
@@ -118,6 +118,7 @@
           <div class="card-body">
             <a href="{% url 'create_quiz' %}" class="btn btn-primary sm">Create Exam</a>
             <a href="{% url 'manage_quizzes' %}" class="btn btn-secondary sm">Manage Exams</a>
+            <a href="{% url 'retake_requests_list' %}" class="btn btn-success sm">Allow retake exam</a>
           </div>
       </div>
     </div> 
@@ -139,6 +140,21 @@
   </div>
 
 </div>
+
+<!-- Quiz Detail Modal --><div class="modal fade" id="quizDetailModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Quiz Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="quizDetailModalBody">
+        <!-- Filled by AJAX -->
+      </div>
+    </div>
+  </div>
+</div>
+
 
 <!-- Extra JS -->
 {% block extra_js %}
@@ -200,8 +216,7 @@ async function fetchDashboard(page_logs=1, page_quizzes=1) {
             <small class="d-block">By ${q.created_by}</small>
             <small class="d-block">${new Date(q.start_time).toLocaleString()} - ${new Date(q.end_time).toLocaleString()}</small>
             <button id="publish-btn-${q.id}" class="btn btn-sm ${q.is_published ? 'btn-outline-danger' : 'btn-outline-primary'} mt-1" onclick="togglePublish(${q.id})">${q.is_published ? "Unpublish" : "Publish"}</button>
-            <a href="/exams/manage_quizzes/${q.id}/" class="btn btn-sm btn-outline-secondary mt-1">View</a>
-
+            <a href="#" class="btn btn-sm btn-outline-secondary mt-1" onclick="viewQuiz(${q.id}); return false;">View</a>
           </div>
         </div>
       </div>
@@ -316,13 +331,6 @@ document.getElementById("downloadExcel").addEventListener("click", async functio
   fetchDashboard();
 });
 
-{% comment %} // publish toggle (optional helper)
-async function togglePublish(quizId, currentlyPublished) {
-  // you need a separate API to toggle publish; for demo we just alert
-  alert("Publishing/Unpublishing quiz not wired here. Add endpoint to toggle publish.");
- 
-} {% endcomment %}
-
 // logs page input
 document.getElementById("logsPage").addEventListener("change", function(){
   const p = parseInt(this.value) || 1;
@@ -334,6 +342,8 @@ fetchDashboard();
 setInterval(()=>fetchDashboard(parseInt(document.getElementById('logsPage').value||1,10), 1), 10000);
 
 </script>
+
+
 <div id="admin-dashboard"></div>
 
 <script>
@@ -344,25 +354,28 @@ function loadAdminDashboard() {
       document.getElementById("admin-dashboard").innerHTML = `
         <h3>Stats</h3>
         Total Users: ${data.stats.total_users} <br>
+        Admins: ${data.stats.admins}, 
         Teachers: ${data.stats.teachers}, Students: ${data.stats.students}
 
         <h3>Leaderboard</h3>
         <ul>${data.leaderboard.map(u => `<li>${u.username}: ${u.avg_score}</li>`).join("")}</ul>
+        <h5> Learn and grow! 📚🚀 everyday</h5>
       `;
     });
 }
 loadAdminDashboard();
 setInterval(loadAdminDashboard, 5000);
+</script>
 
-
-function getCookie(name) {
+<script>
+  function getCSRFToken() {
   let cookieValue = null;
-  if (document.cookie && document.cookie !== "") {
-    const cookies = document.cookie.split(";");
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
     for (let i = 0; i < cookies.length; i++) {
       const cookie = cookies[i].trim();
-      if (cookie.substring(0, name.length + 1) === (name + "=")) {
-        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+      if (cookie.startsWith("csrftoken=")) {
+        cookieValue = decodeURIComponent(cookie.substring("csrftoken=".length));
         break;
       }
     }
@@ -370,106 +383,46 @@ function getCookie(name) {
   return cookieValue;
 }
 
-
 async function togglePublish(quizId) {
   try {
-    const response = await fetch(`/quiz/${quizId}/toggle_publish/`, {
+    const res = await fetch(`/exams/api/quizzes/${quizId}/toggle-publish/`, {
       method: "POST",
       headers: {
-        "X-CSRFToken": getCookie("csrftoken"),
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({})
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCSRFToken(),
+      }
     });
-
-    if (!response.ok) throw new Error("Network error");
-
-    const data = await response.json();
-
-    if (data.success) {
-      // Instead of updating just the button, refresh full quiz list
-      await refreshQuizList();
+    const data = await res.json();
+    if (data.ok) {
+      fetchDashboard(); // refresh full quiz list immediately
     } else {
-      alert("Failed to update quiz status: " + data.error);
+      alert("Error: " + (data.error || "Unknown error"));
     }
-  } catch (error) {
-    console.error("Error toggling publish:", error);
+  } catch (err) {
     alert("Error updating quiz status.");
-  }
-
-
-async function refreshQuizList() {
-  try {
-    const response = await fetch("/api/student/quizzes/");
-    if (!response.ok) throw new Error("Network error");
-    const data = await response.json();
-
-    let quizzesHtml = "";
-    data.quizzes.forEach(q => {
-      quizzesHtml += `
-        <div class="border p-2 mb-2">
-          <div class="d-flex justify-content-between">
-            <div>
-              <strong>${q.title}</strong>
-              <div class="small text-muted">${q.subject} • ${q.class_name}</div>
-            </div>
-            <div>
-              <small class="d-block">By ${q.created_by || "Teacher"}</small>
-              <small class="d-block">${new Date(q.start_time).toLocaleString()} - ${new Date(q.end_time).toLocaleString()}</small>
-              <button id="publish-btn-${q.id}" 
-                      class="btn btn-sm ${q.is_published ? 'btn-outline-danger' : 'btn-outline-primary'} mt-1" 
-                      onclick="togglePublish(${q.id})">
-                ${q.is_published ? "Unpublish" : "Publish"}
-              </button>
-              <button class="btn btn-sm btn-info mt-1" onclick="viewQuizDetail(${q.id})">View</button>
-            </div>
-          </div>
-        </div>
-      `;
-    });
-
-    document.getElementById("quizzes-list").innerHTML = quizzesHtml;
-  } catch (error) {
-    console.error("Error loading quizzes:", error);
   }
 }
 
-
-async function viewQuizDetail(quizId) {
+async function viewQuiz(quizId) {
   try {
-    const response = await fetch(`/quiz/${quizId}/detail/`);
-    if (!response.ok) throw new Error("Network error");
-    const data = await response.json();
-
+    const res = await fetch(`/exams/api/quizzes/${quizId}/`);
+    const data = await res.json();
     if (data.ok) {
-      const q = data.quiz;
       document.getElementById("quizDetailModalBody").innerHTML = `
-        <h5>${q.title}</h5>
-        <p><strong>Subject:</strong> ${q.subject}</p>
-        <p><strong>Class:</strong> ${q.class_name}</p>
-        <p><strong>Created by:</strong> ${q.created_by}</p>
-        <p><strong>Duration:</strong> ${q.duration_minutes} min</p>
-        <p><strong>Available:</strong> ${new Date(q.start_time).toLocaleString()} – ${new Date(q.end_time).toLocaleString()}</p>
-        <p><strong>Status:</strong> ${q.is_published ? "Published ✅" : "Unpublished ❌"}</p>
+        <p><strong>Title:</strong> ${data.quiz.title}</p>
+        <p><strong>Subject:</strong> ${data.quiz.subject}</p>
+        <p><strong>Class:</strong> ${data.quiz.class_name}</p>
+        <p><strong>Duration:</strong> ${data.quiz.duration_minutes} minutes</p>
+        <p><strong>Published:</strong> ${data.quiz.is_published ? "✅ Yes" : "❌ No"}</p>
       `;
       new bootstrap.Modal(document.getElementById("quizDetailModal")).show();
     } else {
-      alert(data.error);
+      alert("Error: " + (data.error || "Could not fetch quiz details"));
     }
-  } catch (error) {
-    console.error("Error loading quiz detail:", error);
+  } catch (err) {
+    alert("Failed to load quiz details.");
   }
 }
-
-
-
-
-
-}
-
-
-
-
 
 </script>
 

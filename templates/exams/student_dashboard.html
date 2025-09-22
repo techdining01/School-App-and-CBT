@@ -1,143 +1,314 @@
 {% extends "base.html" %}
+{% load static %}
 {% block content %}
 <div class="container mt-4">
-    <h2>Student Dashboard</h2>
+  <h2 class="mb-3">🎓 Student Dashboard</h2>
 
-    <!-- Quizzes Section -->
-    <h4>Available Quizzes</h4>
-    <ul id="quiz-list"></ul>
+  <!-- Toast area for 3s messages -->
+  <div aria-live="polite" aria-atomic="true" class="position-relative">
+    <div id="toast-container" class="toast-container position-fixed top-0 end-0 p-3"></div>
+  </div>
 
-    <!-- Attempts Section -->
-    <h4>Your Attempts</h4>
-    <ul id="attempt-list"></ul>
+  <div class="row">
+    <div class="col-lg-4">
+      <!-- Notifications -->
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <strong>📩 Notifications</strong>
+          <small><span id="notif-count">0</span></small>
+        </div>
+        <ul id="notifications-list" class="list-group list-group-flush" style="max-height:320px; overflow:auto;"></ul>
+        <div class="card-footer d-flex justify-content-between">
+          <button class="btn btn-sm btn-outline-secondary" id="notif-prev">Prev</button>
+          <small id="notif-pager"></small>
+          <button class="btn btn-sm btn-outline-secondary" id="notif-next">Next</button>
+        </div>
+      </div>
 
-    <!-- Notifications Section -->
-    <h4>Notifications</h4>
-    <ul id="notif-list"></ul>
-    <button id="mark-read">Mark all as read</button>
-</div>
+      <!-- Leaderboard -->
+      <div class="card mb-3">
+        <div class="card-header"><strong>🏆 Leaderboard</strong></div>
+        <ul id="leaderboard" class="list-group list-group-flush"></ul>
+      </div>
 
-<div class="quiz-list" >
-  {% for quiz in quizzes %}
-    <div class="card mb-2 p-3">
-      <h5>{{ quiz.title }}</h5>
-      {% if quiz.attempted %}
-        <button 
-          class="btn btn-warning start-quiz-btn" 
-          data-url="{% url 'resume_quiz' quiz.id %}">
-          Resume Quiz
-        </button>
-      {% else %}
-        <button 
-          class="btn btn-success start-quiz-btn" 
-          data-url="{% url 'start_quiz' quiz.id %}">
-          Start Quiz
-        </button>
-      {% endif %}
+      <!-- Download report -->
+      <div class="card mb-3 p-3">
+        <a id="download-report-btn" href="{% url 'download_student_full_report' request.user.id %}" class="btn btn-success w-100">📥 Download Full Report (PDF)</a>
+      </div>
     </div>
-  {% endfor %}
+
+    <div class="col-lg-8">
+      <!-- Summary -->
+      <div class="card mb-3">
+        <div class="card-header"><strong>📊 Summary</strong></div>
+        <div class="card-body" id="summary-area"></div>
+      </div>
+
+      <!-- Available Quizzes -->
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between">
+          <strong>📝 Available Quizzes</strong>
+          <small>auto-refresh</small>
+        </div>
+        <div class="card-body" id="quizzes-area" style="min-height:120px;"></div>
+        <a href="#" class="btn btn-warning btn-sm"
+            onclick="return confirm('Are you sure you want to request a retake?');">
+            🔄 Request Retake
+        </a>
+        <div class="card-footer d-flex justify-content-between">
+          <button class="btn btn-sm btn-outline-secondary" id="quizzes-prev">Prev</button>
+          <small id="quizzes-pager"></small>
+          <button class="btn btn-sm btn-outline-secondary" id="quizzes-next">Next</button>
+        </div>
+      </div>
+
+      <!-- Past Attempts -->
+      <div class="card mb-3">
+        <div class="card-header"><strong>📖 Past Attempts</strong></div>
+        <div class="card-body" id="attempts-area" style="min-height:120px;"></div>
+        <div class="card-footer d-flex justify-content-between">
+          <button class="btn btn-sm btn-outline-secondary" id="attempts-prev">Prev</button>
+          <small id="attempts-pager"></small>
+          <button class="btn btn-sm btn-outline-secondary" id="attempts-next">Next</button>
+        </div>
+      </div>
+
+      <!-- Performance chart -->
+      <div class="card mb-3">
+        <div class="card-header"><strong>📈 Performance by Subject</strong></div>
+        <div class="card-body">
+          <canvas id="performanceChart" height="120"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
+<!-- CSRF token for JS -->
+<form style="display:none;">{% csrf_token %}</form>
 
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-const QUIZ_LIST_URL = "{% url 'api_student_quizzes' %}";
-const ATTEMPT_LIST_URL = "{% url 'api_student_attempts' %}";
-const NOTIF_UNREAD_URL = "{% url 'api_notifications_unread' %}";
-const NOTIF_MARK_READ_URL = "{% url 'api_notifications_mark_read' %}";
-const QUIZ_TAKE_URL = "{% url 'api_take_quiz' 0 %}".replace("/0/", "/"); // dynamic
-
-// Fetch quizzes
-fetch(QUIZ_LIST_URL).then(res=>res.json()).then(data=>{
-    let ul = document.getElementById("quiz-list");
-    data.quizzes.forEach(q=>{
-        ul.innerHTML += `<li>
-            ${q.title} (${q.subject}) - Due: ${q.end_time}
-            <a href="/quiz/${q.id}/take/">Take</a>
-        </li>`;
-    });
-});
-
-// Fetch attempts
-fetch(ATTEMPT_LIST_URL).then(res=>res.json()).then(data=>{
-    let ul = document.getElementById("attempt-list");
-    data.attempts.forEach(a=>{
-        ul.innerHTML += `<li>${a.quiz} - Score: ${a.score} 
-            <a href="/quiz/${a.id}/review/">Review</a>
-        </li>`;
-    });
-});
-
-// Fetch notifications
-fetch(NOTIF_UNREAD_URL).then(res=>res.json()).then(data=>{
-    let ul = document.getElementById("notif-list");
-    data.notifications.forEach(n=>{
-        ul.innerHTML += `<li>${n.message} (${n.created_at})</li>`;
-    });
-});
-
-// Mark read
-document.getElementById("mark-read").addEventListener("click", ()=>{
-    fetch(NOTIF_MARK_READ_URL).then(()=>alert("All notifications marked as read"));
-});
-</script>
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script>
-$(document).on("click", ".start-quiz-btn", function () {
-  let url = $(this).data("url");
-
-  $.ajax({
-    url: url,
-    type: "GET",
-    success: function (data) {
-      $("#quizModalBody").html(data.html_form);
-      $("#quizModal").modal("show");
-    }
-  });
-});
-</script>
-
-
-<script>
-function loadQuizzes() {
-  $.get("{% url 'api_student_quizzes' %}", function(data){
-    let html = "<ul class='list-group'>";
-      data.quizzes.forEach(q => {
-      let btnClass = "btn-primary";
-      let btnText = "Start";
-      
-      if (q.status === "in_progress") {
-        btnClass = "btn-warning";
-        btnText = "Resume";
-      } else if (q.status === "completed") {
-        btnClass = "btn-success";
-        btnText = "Completed";
+/* Helper: CSRF token */
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim();
+      if (cookie.substring(0, name.length + 1) === (name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
       }
+    }
+  }
+  return cookieValue;
+}
+const CSRFTOKEN = getCookie('csrftoken');
 
-      html += `
-      <li class="list-group-item d-flex justify-content-between align-items-center">
-          ${q.title}
-          <button class="btn ${btnClass}" onclick="openQuiz(${q.id})">${btnText}</button>
-        </li>`;
+/* Endpoints */
+const DATA_URL = "{% url 'student_dashboard_data' %}";
+const NOTIF_MARK_READ_URL = "{% url 'api_notifications_mark_read' %}";
+
+/* Pagination state */
+let notifPage = 1, notifPageSize = 6;
+let quizzesPage = 1, quizzesPageSize = 6;
+let attemptsPage = 1, attemptsPageSize = 6;
+
+/* Chart */
+let perfChart = null;
+
+/* Toast helper (auto-dismiss 3s) */
+function showToast(message, variant='success') {
+  const id = 't'+Date.now();
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = `toast align-items-center text-bg-${variant} border-0`;
+  toast.role = 'alert';
+  toast.ariaLive = 'assertive';
+  toast.ariaAtomic = 'true';
+  toast.innerHTML = `<div class="d-flex">
+      <div class="toast-body">${message}</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>`;
+  container.appendChild(toast);
+  const btoast = new bootstrap.Toast(toast, { delay: 3000 });
+  btoast.show();
+  setTimeout(()=> { toast.remove(); }, 3500);
+}
+
+/* Mark notification read */
+async function markNotificationRead(nid) {
+  try {
+    const res = await fetch(NOTIF_MARK_READ_URL, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', 'X-CSRFToken': CSRFTOKEN},
+      body: JSON.stringify({id: nid})
     });
-    html += "</ul>";
-    $("#quizList").html(html);
+    const j = await res.json();
+    if (j.ok) {
+      showToast('Marked as read', 'success');
+      fetchDashboard(); // refresh notifications
+    } else {
+      showToast(j.error || 'Could not mark read', 'danger');
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Network error', 'danger');
+  }
+}
+
+/* Render helpers */
+function renderNotifications(items, meta) {
+  const list = document.getElementById('notifications-list');
+  list.innerHTML = '';
+  document.getElementById('notif-count').innerText = meta.total || 0;
+  if (!items.length) {
+    list.innerHTML = `<li class="list-group-item">No notifications</li>`;
+    document.getElementById('notif-pager').innerText = '';
+    return;
+  }
+  items.forEach(n => {
+    const li = document.createElement('li');
+    li.className = 'list-group-item d-flex justify-content-between align-items-center';
+    if (!n.is_read) li.classList.add('list-group-item-warning');
+    const left = `<div>${n.message}<br><small class="text-muted">${new Date(n.created_at).toLocaleString()}</small></div>`;
+    const btn = n.is_read ? '' : `<button class="btn btn-sm btn-outline-primary" onclick="markNotificationRead(${n.id})">Mark</button>`;
+    li.innerHTML = left + `<div>${btn}</div>`;
+    list.appendChild(li);
+  });
+  document.getElementById('notif-pager').innerText = `Page ${meta.page} / ${meta.pages}`;
+}
+
+/* Quizzes & Attempts renderers */
+function renderQuizzes(items, meta) {
+  const area = document.getElementById('quizzes-area');
+  area.innerHTML = '';
+  document.getElementById('quizzes-pager').innerText = `Page ${meta.page} / ${meta.pages}`;
+  if (!items.length) { area.innerHTML = `<div class="text-muted">No available quizzes</div>`; return; }
+
+  items.forEach(q => {
+    const card = document.createElement('div');
+    card.className = 'border rounded p-2 mb-2 d-flex justify-content-between align-items-center';
+    const left = `<div><strong>${q.title}</strong><br><small class="text-muted">${q.subject} • ${q.class_name}</small><br><small>${new Date(q.start_time).toLocaleString()} - ${new Date(q.end_time).toLocaleString()}</small></div>`;
+    const allowRetakeBadge = q.allow_retake || q.student_retake_override ? '<span class="badge bg-info ms-1">Retake</span>' : '';
+    let actionBtn = `<a class="btn btn-sm btn-primary" href="/exams/${q.id}/take/">${q.already_completed ? 'Resume' : 'Start'}</a>`;
+    card.innerHTML = `${left}<div>${allowRetakeBadge}<br>${actionBtn}</div>`;
+    area.appendChild(card);
   });
 }
 
-function openQuiz(quizId){
-  $.get(`/quiz/${quizId}/form/`, function(html){
-    $("#quizModalContent").html(html);
-    $("#quizModal").modal("show");
+function renderAttempts(items, meta) {
+  const area = document.getElementById('attempts-area');
+  area.innerHTML = '';
+  document.getElementById('attempts-pager').innerText = `Page ${meta.page} / ${meta.pages}`;
+  if (!items.length) { area.innerHTML = `<div class="text-muted">No attempts yet</div>`; return; }
+
+  items.forEach(a => {
+    const div = document.createElement('div');
+    div.className = 'mb-2';
+    div.innerHTML = `<div class="d-flex justify-content-between">
+      <div>
+        <strong>${a.quiz}</strong><br>
+        <small class="text-muted">Score: ${a.score} • Obtained: ${a.obtained_marks}/${a.total_marks}</small>
+      </div>
+      <div>
+        ${a.completed ? '<span class="badge bg-success">Completed</span>' : '<span class="badge bg-secondary">In progress</span>'}
+        <a class="btn btn-sm btn-outline-secondary ms-2" href="/attempt/${a.attempt_id}/review/">Review</a>
+      </div>
+    </div>`;
+    // show wrong answers preview
+    if (a.wrong_answers && a.wrong_answers.length) {
+      const ul = document.createElement('ul');
+      ul.className = 'small mt-2';
+      a.wrong_answers.slice(0,3).forEach(w => {
+        const li = document.createElement('li');
+        li.innerHTML = `Q: ${w.question} — Your: ${w.your_answer} — Correct: ${w.correct_answer}`;
+        ul.appendChild(li);
+      });
+      div.appendChild(ul);
+    }
+    area.appendChild(div);
   });
 }
 
-function refreshStudentDashboard(){
-  loadQuizzes();
+function renderLeaderboard(items) {
+  const list = document.getElementById('leaderboard');
+  list.innerHTML = '';
+  if (!items.length) { list.innerHTML = '<li class="list-group-item">No leaderboard</li>'; return; }
+  items.forEach((l, idx) => {
+    const li = document.createElement('li');
+    li.className = 'list-group-item';
+    li.innerHTML = `<strong>${idx+1}. ${l.full_name || l.username}</strong> <span class="float-end">${l.avg_score.toFixed(2)}</span>`;
+    list.appendChild(li);
+  });
 }
 
-$(document).ready(function(){
-  loadQuizzes();
-});
+function renderSummary(s) {
+  const el = document.getElementById('summary-area');
+  el.innerHTML = `
+    <p>Total Attempts: <strong>${s.total_attempts}</strong></p>
+    <p>Auto-graded Answers: <strong>${s.auto_graded_count}</strong></p>
+    <p>Pending Subjectives: <strong>${s.pending_subjectives}</strong></p>
+  `;
+}
+
+/* Chart rendering */
+function renderPerformanceChart(data) {
+  const labels = data.map(d => d.subject);
+  const values = data.map(d => d.percentage);
+  const ctx = document.getElementById('performanceChart').getContext('2d');
+  if (perfChart) perfChart.destroy();
+  perfChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{ label: 'Percent', data: values }]
+    },
+    options: { responsive: true, scales: { y: { beginAtZero: true, max: 100 } } }
+  });
+}
+
+/* Fetch and render dashboard */
+async function fetchDashboard() {
+  try {
+    const url = new URL(DATA_URL, window.location.origin);
+    url.searchParams.set('notif_page', notifPage);
+    url.searchParams.set('notif_page_size', notifPageSize);
+    url.searchParams.set('quizzes_page', quizzesPage);
+    url.searchParams.set('quizzes_page_size', quizzesPageSize);
+    url.searchParams.set('attempts_page', attemptsPage);
+    url.searchParams.set('attempts_page_size', attemptsPageSize);
+
+    const res = await fetch(url);
+    const json = await res.json();
+
+    renderNotifications(json.notifications, json.notifications_meta);
+    renderSummary(json.summary);
+    renderQuizzes(json.available_quizzes, json.available_quizzes_meta);
+    renderAttempts(json.past_attempts, json.past_attempts_meta);
+    renderLeaderboard(json.leaderboard);
+    renderPerformanceChart(json.performance_chart);
+
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+/* Pagination controls */
+document.getElementById('notif-prev').addEventListener('click', ()=> { if (notifPage>1) { notifPage--; fetchDashboard(); }});
+document.getElementById('notif-next').addEventListener('click', ()=> { notifPage++; fetchDashboard(); });
+
+document.getElementById('quizzes-prev').addEventListener('click', ()=> { if (quizzesPage>1) { quizzesPage--; fetchDashboard(); }});
+document.getElementById('quizzes-next').addEventListener('click', ()=> { quizzesPage++; fetchDashboard(); });
+
+document.getElementById('attempts-prev').addEventListener('click', ()=> { if (attemptsPage>1) { attemptsPage--; fetchDashboard(); }});
+document.getElementById('attempts-next').addEventListener('click', ()=> { attemptsPage++; fetchDashboard(); });
+
+/* Initial fetch + auto-refresh every 10s */
+fetchDashboard();
+setInterval(fetchDashboard, 10000);
 </script>
-
+{% endblock %}
 {% endblock %}

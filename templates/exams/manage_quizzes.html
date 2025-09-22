@@ -1,11 +1,15 @@
 {% extends 'base.html' %}
 {% block title %}Manage Quizzes{% endblock %}
+
+
 {% block content %}
 {%csrf_token%}
 <div class="container mt-4">
   <div class="d-flex justify-content-between align-items-center mt-3">
       <h2 class='fw-bold mb-3'> Manage Exams </h2>
           <nav class="d-flex gap-3">
+            <a class="btn btn-success btn-sm" style="width: auto; height: 30px;font-size: 11px;" href="{% url 'create_quiz' %}">Create Exam</a>
+            <a class="btn btn-primary btn-sm" style="width: 120px; height: 30px;font-size: 11px;" href="{% url 'retake_requests_list' %}">Allow retake exam</a>
             <a class="btn btn-dark" style="width: 50px; height: 30px;font-size: 10px;" href="{% url 'dashboard' %}">Back</a>
           </nav>
         </div>
@@ -16,7 +20,7 @@
       <tr><th>Title</th><th>Subject</th><th>Start</th><th>End</th><th>Published</th><th>Actions</th></tr>
     </thead>
     <tbody>
-      {% for q in quizzes %}
+      {% for q in page_obj %}
       <tr id="quiz-row-{{ q.id }}">
         <td>{{ q.title }}</td>
         <td>{{ q.subject.name }} ({{ q.subject.school_class.name }})</td>
@@ -24,8 +28,9 @@
         <td>{{ q.end_time }}</td>
         <td><span id="pub-{{ q.id }}">{{ q.is_published|yesno:"Yes,No" }}</span></td>
         <td>
-          <a href="{% url 'manage_quizzes_page'  %}" class="btn btn-sm btn-outline-secondary">View</a>
+          <a href="/exams/quizzes/details/{{q.id}}/" class="btn btn-sm btn-outline-secondary mt-1">View</a>
           <button class="btn btn-sm btn-outline-primary publish-btn" data-id="{{ q.id }}">{{ q.is_published|yesno:"Unpublish,Publish" }}</button>
+          <a href="{% url 'edit_quiz_page' q.id %}" class="btn btn-sm btn-warning mt-1">Edit</a>
           <button class="btn btn-sm btn-danger delete-btn" data-id="{{ q.id }}">Delete</button>
         </td>
       </tr>
@@ -34,7 +39,49 @@
       {% endfor %}
     </tbody>
   </table>
-</div>
+
+  <!-- Pagination controls -->
+  <div class="d-flex justify-content-center">
+    <nav aria-label="Page navigation">
+      <ul class="pagination">
+        {% if page_obj.has_previous %}
+          <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.previous_page_number }}" aria-label="Previous">
+              <span aria-hidden="true">&laquo;</span>
+            </a>
+          </li>
+        {% else %}
+          <li class="page-item disabled">
+            <span class="page-link" aria-label="Previous">
+              <span aria-hidden="true">&laquo;</span>
+            </span>
+          </li>
+        {% endif %}
+
+        {% for num in page_obj.paginator.page_range %}
+          {% if page_obj.number == num %}
+            <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+          {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+            <li class="page-item"><a class="page-link" href="?page={{ num }}">{{ num }}</a></li>
+          {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+          <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.next_page_number }}" aria-label="Next">
+              <span aria-hidden="true">&raquo;</span>
+            </a>
+          </li>
+        {% else %}
+          <li class="page-item disabled">
+            <span class="page-link" aria-label="Next">
+              <span aria-hidden="true">&raquo;</span>
+            </span>
+          </li>
+        {% endif %}
+      </ul>
+    </div>
+
 
 <script>
 (function(){
@@ -70,5 +117,44 @@
     });
   });
 })();
+
+ function getCSRFToken() {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim();
+      if (cookie.startsWith("csrftoken=")) {
+        cookieValue = decodeURIComponent(cookie.substring("csrftoken=".length));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+
+
+// View Quiz Modal View Button
+async function viewQuiz(quizId) {
+  try {
+    const res = await fetch(`/exams/api/quizzes/${quizId}/`);
+    const data = await res.json();
+    if (data.ok) {
+      document.getElementById("quizDetailModalBody").innerHTML = `
+        <p><strong>Title:</strong> ${data.quiz.title}</p>
+        <p><strong>Subject:</strong> ${data.quiz.subject}</p>
+        <p><strong>Class:</strong> ${data.quiz.class_name}</p>
+        <p><strong>Duration:</strong> ${data.quiz.duration_minutes} minutes</p>
+        <p><strong>Published:</strong> ${data.quiz.is_published ? "✅ Yes" : "❌ No"}</p>
+      `;
+      new bootstrap.Modal(document.getElementById("quizDetailModal")).show();
+    } else {
+      alert("Error: " + (data.error || "Could not fetch quiz details"));
+    }
+  } catch (err) {
+    alert("Failed to load quiz details.");
+  }
+}
 </script>
-{% endblock %}
+
+  {% endblock %}

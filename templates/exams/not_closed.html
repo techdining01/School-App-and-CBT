@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-lg mx-auto mt-10 bg-yellow-50 p-6 rounded shadow">
+    <h2 class="text-xl font-semibold text-yellow-800">Exam Not Yet Closed</h2>
+    <p class="mt-2 text-gray-700">The Exam <strong>{{ quiz.title }}</strong> is still ongoing until 
+        {{ quiz.end_time|date:"M d, Y H:i" }}.
+    </p>
+    <p> Subject: {{ quiz.subject.name }} | Class: {{ quiz.subject.school_class }} </p>
+    <p> Created by: {{ quiz.created_by.get_full_name|default:quiz.created_by.username }} on {{ quiz.created_at|date:"M d, Y H:i" }} </p>
+    <hr class="my-4">
+    <p> Please check back after the Exam window has closed to view details and student attempts.</p>
+    <div class="mt-4">
+        <a href="{% url 'manage_quizzes' %}" class="btn btn-dark" >← Back </a>
+    </div>
+</div>
+{% endblock %}

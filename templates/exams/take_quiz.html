@@ -46,7 +46,7 @@
 
   // Start or resume attempt
   async function startAttempt() {
-    const res = await fetch("{% url 'exams:api_start_attempt' quiz.id %}");
+    const res = await fetch("{% url 'api_start_attempt' quiz.id %}");
     const d = await res.json();
     if (!d.ok) {
       showMessage(d.error || 'Cannot start quiz', 'danger');

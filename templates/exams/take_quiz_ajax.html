@@ -18,7 +18,7 @@
   const csrftoken = document.querySelector('#csrf-form input[name=csrfmiddlewaretoken]').value;
 
   // 1) start attempt (resume if exists)
-  const startResp = await fetch("{% url 'start_attempt' quiz.id %}");
+  const startResp = await fetch("{% url 'api_start_attempt' quiz.id %}");
   const startData = await startResp.json();
   if (!startData.ok) { alert(startData.error || 'Cannot start'); return; }
   const attemptId = startData.attempt_id;

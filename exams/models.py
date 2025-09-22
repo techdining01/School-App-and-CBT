@@ -3,9 +3,6 @@ from django.conf import settings
 from django.utils import timezone
 
 
-# from django.contrib.auth import get_user_model
-# User = get_user_model()
-
 
 class Class(models.Model):
     name = models.CharField(max_length=50, unique=True)  # e.g. JSS1, JSS2
@@ -78,7 +75,7 @@ class StudentQuizAttempt(models.Model):
 
     def can_retake(self):
         """Allow retake if admin has granted it, or quiz allows retakes globally."""
-        return self.retake_allowed or self.quiz.allow_retake
+        return self.retake_allowed 
 
     def __str__(self):
         return f"{self.student} - {self.quiz} (Retakes: {self.retake_count})"
@@ -96,24 +93,83 @@ class Answer(models.Model):
     feedback = models.TextField(blank=True, null=True)
     is_pending = models.BooleanField(default=False)  # True for subjective until graded
 
+    @classmethod
+    def objective_score(cls, attempt):
+        """Return total objective marks for a given attempt."""
+        return cls.objects.filter(
+            attempt=attempt,
+            question__question_type="objective"
+        ).aggregate(total=models.Sum("obtained_marks"))["total"] or 0
+
+    @classmethod
+    def subjective_score(cls, attempt):
+        """Return total subjective marks for a given attempt (graded only)."""
+        return cls.objects.filter(
+            attempt=attempt,
+            question__question_type="subjective",
+            is_pending=False
+        ).aggregate(total=models.Sum("obtained_marks"))["total"] or 0
+
+    @classmethod
+    def total_score(cls, attempt):
+        """Return grand total (objective + graded subjective)."""
+        return cls.objective_score(attempt) + cls.subjective_score(attempt)
+
+
     def __str__(self):
         return f"Answer by {self.attempt.student} for Q{self.question.id}"
 
 
 
+# class ActionLog(models.Model):
+#     """Log significant actions performed by admins/teachers for audit"""
+#     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+#     action = models.CharField(max_length=255)
+#     model_name = models.CharField(max_length=100, blank=True, null=True)
+#     object_id = models.CharField(max_length=255, blank=True, null=True)
+#     timestamp = models.DateTimeField(auto_now_add=True)
+#     details = models.JSONField(blank=True, null=True)  # optional
+
+#     def __str__(self):
+#         return f"{self.user} {self.action} @ {self.timestamp}"
+    
+
 class ActionLog(models.Model):
-    """Log significant actions performed by admins/teachers for audit"""
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
-    action = models.CharField(max_length=255)
+    ACTION_TYPES = (
+        ('download', 'Download'),
+        ('retake_request', 'Retake Request'),
+        ('grade', 'Grade'),
+        ('review', 'Review'),
+        ('notification', 'Notification'),
+    )
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="action_logs")
+    action_type = models.CharField(max_length=50, choices=ACTION_TYPES)
+    description = models.TextField()
+    created_at = models.DateTimeField(default=timezone.now)
     model_name = models.CharField(max_length=100, blank=True, null=True)
     object_id = models.CharField(max_length=255, blank=True, null=True)
     timestamp = models.DateTimeField(auto_now_add=True)
     details = models.JSONField(blank=True, null=True)  # optional
-
+    
     def __str__(self):
         return f"{self.user} {self.action} @ {self.timestamp}"
 
 
+class RetakeRequest(models.Model):
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, limit_choices_to={"role": "student"})
+    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE)
+    reason = models.TextField(blank=True, null=True)
+    status = models.CharField(
+        max_length=20,
+        choices=(("pending", "Pending"), ("approved", "Approved"), ("denied", "Denied")),
+        default="pending"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(blank=True, null=True)
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="retake_reviews")
+
+    def __str__(self):
+        return f"{self.student.username} → {self.quiz.title} ({self.status})"
 
 
 

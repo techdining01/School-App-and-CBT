@@ -64,7 +64,10 @@
     <div class="card mb-4">
         <div class="card-header">📥 Download Results</div>
         <div class="card-body">
-            <a href="{% url 'export_consolidated_pdf' %}" class="btn btn-success">Download All Results (PDF)</a>
+            <a href="{% url 'download_quiz_report' quiz.id %}" class="btn btn-warning btn-sm">
+                 Download Quiz Report (PDF)
+            </a>
+
         </div>
     </div>
 

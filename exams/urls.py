@@ -27,7 +27,10 @@ urlpatterns = [
 
 
  # Page to start/take quiz (HTML shell)
-    path("<int:quiz_id>/take/", views.take_quiz_page, name="take_quiz_page"),
+    # path("<int:quiz_id>/take/", views.take_quiz_page, name="take_quiz_page"),
+    path("quizzes/details/<int:quiz_id>/", views.quiz_details_page, name="quiz_details_page"),
+    path("quiz/<int:quiz_id>/closed/", views.quiz_closed_detail, name="quiz_closed_detail"),
+    
 
     # AJAX endpoints (JSON)
     path("api/<int:quiz_id>/start_attempt/", views.api_start_attempt, name="api_start_attempt"),
@@ -37,36 +40,38 @@ urlpatterns = [
 
     # Leaderboard
     path("leaderboard/", views.leaderboard, name="leaderboard"),
-    path("quiz/<int:quiz_id>/approve-retake/<int:student_id>/", views.approve_retake, name="approve_retake"),
-
-    # User management
-    # path("admin/users/", views.manage_users, name="manage_users"),
-    # path("admin/users/create/", views.create_user, name="create_user"),
 
     # Quiz management
     path("admin/quizzes/", views.manage_quizzes, name="manage_quizzes"),
     path("admin/quizzes/create/", views.create_quiz, name="create_quiz"),
     path("admin/quizzes/upload-excel/", views.upload_quiz_excel, name="upload_quiz_excel"),
-    path("admin/quizzes/sample-excel/", views.sample_quiz_excel, name="sample_quiz_excel"),
+    path("retake-requests/", views.retake_requests_list, name="retake_requests_list"),
+    path("approve-retake/<int:quiz_id>/<int:student_id>/", views.approve_retake, name="approve_retake"),
+    path("student/request-retake/<int:quiz_id>/", views.request_retake, name="request_retake"),
+    path("teacher/retake-request/<int:request_id>/", views.handle_retake_request, name="handle_retake_request"),
+
 
     path("admin/dashboard/", views.admin_dashboard, name="admin_dashboard"),
     path("admin/dashboard/data/", views.admin_dashboard_data, name="admin_dashboard_data"),
     path('dashboard/superadmin/', views.superadmin_dashboard, name='superadmin_dashboard'),
 
+
     path("teacher/dashboard/", views.teacher_dashboard, name="teacher_dashboard"),
     path("teacher/dashboard/data/", views.teacher_dashboard_data, name="teacher_dashboard_data"),
+    path("teacher/quiz/<int:quiz_id>/grade/", views.grade_quiz, name="grade_quiz"),
+    path("teacher/student/<int:student_id>/review/", views.student_review, name="student_review"),
+    path("teacher/retake/<int:quiz_id>/<int:student_id>/", views.approve_retake, name="approve_retake"),
+    path("teacher/broadcast/", views.broadcast_message, name="broadcast_message"),
+    path("teacher/download/student/<int:student_id>/", views.download_student_report, name="download_student_report"),
+    path("teacher/download/quiz/<int:quiz_id>/", views.download_quiz_report, name="download_quiz_report"),
+    path("notifications/mark-read/<int:notification_id>/", views.mark_notification_read, name="mark_notification_read"),
+    path("broadcast/", views.teacher_broadcast, name="teacher_broadcast"),
 
-    # path("student/dashboard/", views.student_dashboard, name="student_dashboard"),
-    # path("student/dashboard/data/", views.student_dashboard_data, name="student_dashboard_data"),
+    path("student/dashboard/", views.student_dashboard, name="student_dashboard"),
+    path("student/dashboard/data/", views.student_dashboard_data, name="student_dashboard_data"),
+    path("student/notifications/mark-read/", views.api_notifications_mark_read, name="api_notifications_mark_read"),
+    
 
-    #  # broadcast + notifications API endpoints
-    # path("api/broadcast/", views.api_broadcast, name="api_broadcast"),
-    # path("api/notifications/unread/", views.api_notifications_unread, name="api_notifications_unread"),
-    # path("api/notifications/mark-read/", views.api_notifications_mark_read, name="api_notifications_mark_read"),
-
-
-
-   path('dashboard/', views.student_dashboard, name='student_dashboard'),
 
     # API endpoints used by fetch in the template
     path('api/student/quizzes/', views.api_student_quizzes, name='api_student_quizzes'),
@@ -74,9 +79,27 @@ urlpatterns = [
     path('api/student/notifications/unread/', views.api_notifications_unread, name='api_notifications_unread'),
     path('api/student/notifications/mark-read/', views.api_notifications_mark_read, name='api_notifications_mark_read'),
     path('api/student/take-quiz/', views.api_take_quiz, name='api_take_quiz'),
-    path("quiz/<int:quiz_id>/toggle_publish/", views.toggle_quiz_publish, name="toggle_quiz_publish"),
-    path("quiz/<int:quiz_id>/detail/", views.quiz_detail, name="quiz_detail"),
-
+    path("api/quizzes/<int:quiz_id>/toggle-publish/", views.toggle_quiz_publish, name="toggle_quiz_publish"),
+    path("api/quizzes/<int:quiz_id>/", views.quiz_detail_api, name="quiz_detail_api"),
+   
+    # Student report
+    path("reports/student/<int:student_id>/", views.download_student_full_report, name="download_student_full_report"),
     
+    # Teacher report (all students in a quiz)
+    path("reports/quiz/<int:quiz_id>/", views.download_closed_quiz_report, name="download_closed_quiz_report"),
 
 ]
+
+
+ # User management
+    # path("admin/users/", views.manage_users, name="manage_users"),
+    # path("admin/users/create/", views.create_user, name="create_user"),
+
+
+ # broadcast + notifications API endpoints
+    # path("api/broadcast/", views.api_broadcast, name="api_broadcast"),
+    # path("api/notifications/unread/", views.api_notifications_unread, name="api_notifications_unread"),
+    # path("api/notifications/mark-read/", views.api_notifications_mark_read, name="api_notifications_mark_read"),
+
+
+    # path("quiz/<int:quiz_id>/approve-retake/<int:student_id>/", views.approve_retake, name="approve_retake"),

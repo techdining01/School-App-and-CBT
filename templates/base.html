@@ -29,7 +29,7 @@
         <div class="ms-auto d-flex align-items-center gap-2">
             {% if user.is_authenticated %}
                 {% if user.profile_picture %}
-                    <img src="{{ user.profile_picture.url }}" alt="Profile" 
+                    <img src="{{ request.user.profile_picture.url }}" alt="Profile" 
                          class="rounded-circle border border-gray-300" 
                          width="40" height="40">
                 {% else %}

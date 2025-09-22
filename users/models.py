@@ -66,12 +66,12 @@ class User(AbstractUser):
                 pass
 
 
-
 class Notification(models.Model):
     ROLE_CHOICES = (
-        ('student', 'Student'),
-        ('teacher', 'Teacher'),
+        ('superadmin', 'Super Admin'),
         ('admin', 'Admin'),
+        ('teacher', 'Teacher'),
+        ('student', 'Student'),
     )
 
     sender = models.ForeignKey(
@@ -91,6 +91,7 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"To {self.recipient} from {self.sender}: {self.message[:30]}"
+
 
 
 class UserStatusLog(models.Model):

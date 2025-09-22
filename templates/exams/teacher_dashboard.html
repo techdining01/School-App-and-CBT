@@ -1,121 +1,167 @@
 {% extends "base.html" %}
 {% load static %}
 {% block content %}
-<div class="container mt-3">
-  <h2 class="mb-3 fw-bold"> 🧑‍🏫 Teacher Dashboard</h2>
+<div class="container mt-4">
+  <h2 class="mb-3 fw-bold">👨‍🏫 Teacher Dashboard</h2>
 
+  <!-- Toast area -->
+  <div aria-live="polite" aria-atomic="true" class="position-relative">
+    <div id="toast-container" class="toast-container position-fixed top-0 end-0 p-3"></div>
   </div>
 
-  <div class="row mt-3">
-    <!-- Quizzes + Notifications -->
-    <div class="col-md-7">
-      <h5 class="mb-3 fw-bold">Your Quizzes</h5>
-      <div id="teacher-quizzes"></div>
+  <div class="row">
+    <div class="col-lg-4">
+      <!-- Notifications -->
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <strong>📩 Notifications</strong>
+          <small><span id="notif-count">0</span></small>
+        </div>
+        <ul id="notifications-list" class="list-group list-group-flush" style="max-height:320px; overflow:auto;"></ul>
+        <div class="card-footer d-flex justify-content-between">
+          <button class="btn btn-sm btn-outline-secondary" id="notif-prev">Prev</button>
+          <small id="notif-pager"></small>
+          <button class="btn btn-sm btn-outline-secondary" id="notif-next">Next</button>
+        </div>
+      </div>
 
-      <hr>
-      <h5 class="mb-3 fw-bold">Notifications</h5>
-      <ul class="list-group" id="teacher-notifs"></ul>
+      <!-- Broadcast -->
+      <div class="card mb-3 p-3">
+         <h6>📢 Broadcast Message</h6>
+        <form method="post" class="mb-3">
+          {% csrf_token %}
+          <div class="mb-2">
+            <label>Message</label>
+            <textarea name="message" class="form-control" rows="3" required></textarea>
+          </div>
+          <div class="mb-2">
+            <label>Target</label>
+            <select name="target" class="form-control" required>
+              <option value="admins">Admins</option>
+              <option value="students">Students</option>
+              {% comment %} <option value="all">Admins + Students</option> {% endcomment %}
+            </select>
+          </div>
+        <button id="broadcast-btn" class="btn btn-sm btn-warning w-100">Send</button>
+        </form>
+
+        <h5>📝 Your Broadcasts</h5>
+        <ul class="list-group">
+          {% for b in page_obj %}
+            <li class="list-group-item">
+              <strong>{{ b.get_target_display }}</strong>: {{ b.message }}
+              <br><small class="text-muted">{{ b.created_at|date:"SHORT_DATETIME_FORMAT" }}</small>
+            </li>
+          {% empty %}
+            <li class="list-group-item">No broadcasts yet</li>
+          {% endfor %}
+        </ul>
+
+        <div class="mt-3">
+          {% if page_obj.has_previous %}
+            <a href="?page={{ page_obj.previous_page_number }}" class="btn btn-outline-secondary btn-sm">Prev</a>
+          {% endif %}
+          <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+          {% if page_obj.has_next %}
+            <a href="?page={{ page_obj.next_page_number }}" class="btn btn-outline-secondary btn-sm">Next</a>
+          {% endif %}
+        </div>
+      </div>
+    
+      <!-- Download Reports -->
+      <div class="card mb-3 p-3">
+        <a href="#" id="download-class-report" class="btn btn-success w-100">📥 Download Closed Quiz Report</a>
+      </div>
     </div>
 
-    <!-- Broadcast -->
-    <div class="col-md-5">
-      <div class="card p-3">
-        <h5 class="mb-3 fw-bold">Broadcast to Students</h5>
-        <div id="teacher-broadcast-alert" class="alert d-none" role="alert"></div>
-        <form id="teacherBroadcastForm">
-          <input type="hidden" name="role" value="student">
-          <div class="mb-2">
-            <textarea id="teacherBroadcastMessage" name="message" class="form-control" rows="4" placeholder="Message to students..."></textarea>
-          </div>
-          <button class="btn btn-primary" type="submit">Send</button>
-        </form>
+    <div class="col-lg-8">
+      <!-- Summary -->
+      <div class="card mb-3">
+        <div class="card-header"><strong>📊 Summary</strong></div>
+        <div class="card-body" id="summary-area"></div>
+      </div>
+
+      <!-- Quizzes -->
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between">
+          <strong>📝 Quizzes</strong>
+          <small>auto-refresh</small>
+        </div>
+        <div class="card-body" id="quizzes-area" style="min-height:120px;"></div>
+        <div class="card-footer d-flex justify-content-between">
+          <button class="btn btn-sm btn-outline-secondary" id="quizzes-prev">Prev</button>
+          <small id="quizzes-pager"></small>
+          <button class="btn btn-sm btn-outline-secondary" id="quizzes-next">Next</button>
+        </div>
+      </div>
+
+      <!-- Grading tasks -->
+      <div class="card mb-3">
+        <div class="card-header"><strong>✏️ Pending Grading</strong></div>
+        <div class="card-body" id="grading-area"></div>
+        <div class="card-footer d-flex justify-content-between">
+          <button class="btn btn-sm btn-outline-secondary" id="grading-prev">Prev</button>
+          <small id="grading-pager"></small>
+          <button class="btn btn-sm btn-outline-secondary" id="grading-next">Next</button>
+        </div>
+      </div>
+
+      <!-- Performance chart -->
+      <div class="card mb-3">
+        <div class="card-header"><strong>📈 Class Performance</strong></div>
+        <div class="card-body"><canvas id="performanceChart" height="120"></canvas></div>
+      </div>
+
+      <!-- Leaderboard -->
+      <div class="card mb-3">
+        <div class="card-header"><strong>🏆 Leaderboard (Top Students)</strong></div>
+        <ul id="leaderboard-list" class="list-group list-group-flush"></ul>
       </div>
     </div>
   </div>
 </div>
-{% endblock %}
 
+<!-- CSRF -->
+<form style="display:none;">{% csrf_token %}</form>
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-const TEACHER_QUIZ_LIST_URL = "{% url 'api_teacher_quizzes' %}";
-const TEACHER_BROADCAST_URL = "{% url 'api_broadcast' %}";
-const NOTIF_UNREAD_URL = "{% url 'api_notifications_unread' %}";
-const NOTIF_MARK_READ_URL = "{% url 'api_notifications_mark_read' %}";
-const csrftoken = "{{ csrf_token }}";
+// Auto-refresh dashboard every 10s
+function fetchTeacherDashboard() {
+  fetch("{% url 'teacher_dashboard_data' %}")
+    .then(res => res.json())
+    .then(data => {
+      // Render Summary
+      const summaryArea = document.getElementById("summary-area");
+      summaryArea.innerHTML = `
+        <p><strong>Total Attempts:</strong> ${data.summary.total_attempts}</p>
+        <p><strong>Auto Graded:</strong> ${data.summary.auto_graded_count}</p>
+        <p><strong>Pending Subjectives:</strong> ${data.summary.pending_subjectives}</p>
+      `;
 
-// Load teacher quizzes
-async function loadTeacherQuizzes() {
-  const res = await fetch(TEACHER_QUIZ_LIST_URL);
-  const j = await res.json();
-  const container = document.getElementById("teacher-quizzes");
-  container.innerHTML = "";
-  if (!j.ok) { container.textContent = "Error loading quizzes."; return; }
-  j.quizzes.forEach(q => {
-    const div = document.createElement("div");
-    div.className = "border rounded p-2 mb-2";
-    div.innerHTML = `<strong>${q.title}</strong> (${q.subject}) - Attempts: ${q.attempts}`;
-    container.appendChild(div);
-  });
-}
+      // Render Quizzes
+      const quizArea = document.getElementById("quizzes-area");
+      quizArea.innerHTML = data.quizzes.map(q =>
+        `<div><strong>${q.title}</strong> (${q.subject__name}) <br>
+         ${q.start_time} → ${q.end_time}</div>`
+      ).join("<hr>");
 
-// Load notifications
-async function fetchTeacherNotifications() {
-  const res = await fetch(NOTIF_UNREAD_URL);
-  const j = await res.json();
-  const list = document.getElementById("teacher-notifs");
-  list.innerHTML = "";
-  if (!j.ok) return;
-  j.notifications.forEach(n => {
-    const li = document.createElement("li");
-    li.className = "list-group-item d-flex justify-content-between align-items-start";
-    li.innerHTML = `
-      <div>
-        <div class="fw-bold">${n.sender || 'System'}</div>
-        <div class="small text-muted">${new Date(n.created_at).toLocaleString()}</div>
-        <div class="mt-1">${n.message}</div>
-      </div>
-      <div>
-        <button class="btn btn-sm btn-outline-primary mark-read" data-id="${n.id}">Mark read</button>
-      </div>
-    `;
-    list.appendChild(li);
-  });
-  document.querySelectorAll(".mark-read").forEach(btn => {
-    btn.addEventListener("click", async e => {
-      const id = e.currentTarget.dataset.id;
-      await fetch(NOTIF_MARK_READ_URL, {
-        method:"POST", headers:{"Content-Type":"application/json","X-CSRFToken": csrftoken},
-        body: JSON.stringify({id})
-      });
-      e.currentTarget.closest("li").remove();
+      // Render Leaderboard
+      const lb = document.getElementById("leaderboard-list");
+      lb.innerHTML = data.leaderboard.length
+        ? data.leaderboard.map((s, i) =>
+          `<li class="list-group-item d-flex justify-content-between">
+             <span>${i+1}. ${s.student__username}</span>
+             <span><strong>${s.avg_score ? s.avg_score.toFixed(2) : 0}</strong></span>
+           </li>`
+        ).join("")
+        : "<li class='list-group-item'>No data yet</li>";
+
+      // TODO: Render notifications, grading, performance chart
     });
-  });
 }
-
-// Broadcast
-document.getElementById("teacherBroadcastForm").addEventListener("submit", async function(e){
-  e.preventDefault();
-  const msg = document.getElementById("teacherBroadcastMessage").value.trim();
-  if (!msg) return;
-  const payload = {role:"student", message:msg};
-  const res = await fetch(TEACHER_BROADCAST_URL, {
-    method:"POST", headers:{"Content-Type":"application/json","X-CSRFToken":csrftoken},
-    body: JSON.stringify(payload)
-  });
-  const j = await res.json();
-  const alert = document.getElementById("teacher-broadcast-alert");
-  if (j.ok) {
-    alert.className = "alert alert-success"; alert.textContent = j.message; alert.classList.remove("d-none");
-    setTimeout(()=> alert.classList.add("d-none"), 3000);
-    document.getElementById("teacherBroadcastMessage").value = "";
-  } else {
-    alert.className = "alert alert-danger"; alert.textContent = j.error; alert.classList.remove("d-none");
-  }
-});
-
-// init
-loadTeacherQuizzes();
-fetchTeacherNotifications();
-setInterval(fetchTeacherNotifications, 10000);
+fetchTeacherDashboard();
+setInterval(fetchTeacherDashboard, 10000);
 </script>
+{% endblock %}
 {% endblock %}

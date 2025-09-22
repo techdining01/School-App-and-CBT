@@ -22,6 +22,7 @@
         </div>
         <div class="mb-2 row">
           <div class="col">
+            <label>Subject</label>
             <select id="quiz-subject" class="form-select">
               <option value="">-- select subject --</option>
               {% for s in subjects %}
@@ -30,25 +31,30 @@
             </select>
           </div>
           <div class="col">
+            <label>Start_time</label>
             <input id="quiz-start" type="datetime-local" class="form-control" placeholder="Start time">
           </div>
           <div class="col">
+            <label>End_time</label>
             <input id="quiz-end" type="datetime-local" class="form-control" placeholder="End time">
           </div>
         </div>
         <div class="mb-2 row">
           <div class="col">
+            <label>Duration</label>
             <input id="quiz-duration" type="number" class="form-control" value="30" placeholder='Duration'>
           </div>
           <div class="col">
+            <label>Published?</label>
             <select id="quiz-publish" class="form-select">
               <option value="false" selected>No</option>
               <option value="true">Yes (publish)</option>
+              <label></label>
             </select>
           </div>
         </div>
 
-        <hr>
+        <hr><br>
         <h6>Questions</h6>
         <div id="questions-container"></div>
         <button id="add-question-btn" class="btn btn-outline-primary mt-2">+ Add Question</button>
