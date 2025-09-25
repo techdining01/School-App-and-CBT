@@ -19,6 +19,7 @@ class Subject(models.Model):
         return f"{self.name} ({self.school_class})"
 
 
+
 class Quiz(models.Model):
     title = models.CharField(max_length=200)
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name="quizzes")
@@ -65,9 +66,12 @@ class StudentQuizAttempt(models.Model):
     started_at = models.DateTimeField(auto_now_add=True)
     end_time = models.DateTimeField(null=True, blank=True)  # quiz expiry
     completed = models.BooleanField(default=False)  # submitted or not
+    completed_at = models.DateTimeField(auto_now_add=True)
     retake_allowed = models.BooleanField(default=False)  # ✅ admin/superadmin override
     retake_count = models.PositiveIntegerField(default=0)  # how many times student retook
     score = models.FloatField(default=0.0)  # total score for the attempt
+    retake_requested = models.BooleanField(default=False)
+
 
     def can_resume(self):
         """Allow resume if attempt still within time and not submitted."""
@@ -91,7 +95,7 @@ class Answer(models.Model):
     graded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='graded_answers')
     graded_at = models.DateTimeField(null=True, blank=True)
     feedback = models.TextField(blank=True, null=True)
-    is_pending = models.BooleanField(default=False)  # True for subjective until graded
+    is_pending = models.BooleanField(default=True)  # True for subjective until graded
 
     @classmethod
     def objective_score(cls, attempt):

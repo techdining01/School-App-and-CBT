@@ -88,10 +88,12 @@ class Notification(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+ 
+    def get_target_display(self):
+        return f"To {self.recipient} from {self.sender}: {self.message[:30]}"
 
     def __str__(self):
         return f"To {self.recipient} from {self.sender}: {self.message[:30]}"
-
 
 
 class UserStatusLog(models.Model):

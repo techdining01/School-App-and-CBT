@@ -193,9 +193,9 @@ function renderQuizzes(items, meta) {
     card.className = 'border rounded p-2 mb-2 d-flex justify-content-between align-items-center';
     const left = `<div><strong>${q.title}</strong><br><small class="text-muted">${q.subject} • ${q.class_name}</small><br><small>${new Date(q.start_time).toLocaleString()} - ${new Date(q.end_time).toLocaleString()}</small></div>`;
     const allowRetakeBadge = q.allow_retake || q.student_retake_override ? '<span class="badge bg-info ms-1">Retake</span>' : '';
-    let actionBtn = `<a class="btn btn-sm btn-primary" href="/exams/${q.id}/take/">${q.already_completed ? 'Resume' : 'Start'}</a>`;
+    let actionBtn = `<a class="btn btn-sm btn-primary" href="/exams/quiz/${q.id}/take/">${q.completed ? 'Resume' : 'Start'}</a>`;
     card.innerHTML = `${left}<div>${allowRetakeBadge}<br>${actionBtn}</div>`;
-    area.appendChild(card);
+    area.appendChild(card); 
   });
 }
 
@@ -215,7 +215,7 @@ function renderAttempts(items, meta) {
       </div>
       <div>
         ${a.completed ? '<span class="badge bg-success">Completed</span>' : '<span class="badge bg-secondary">In progress</span>'}
-        <a class="btn btn-sm btn-outline-secondary ms-2" href="/attempt/${a.attempt_id}/review/">Review</a>
+        <a class="btn btn-sm btn-outline-secondary ms-2" href="/exams/attempt/${a.attempt_id}/review/">Review</a>
       </div>
     </div>`;
     // show wrong answers preview
@@ -231,7 +231,7 @@ function renderAttempts(items, meta) {
     }
     area.appendChild(div);
   });
-}
+} 
 
 function renderLeaderboard(items) {
   const list = document.getElementById('leaderboard');

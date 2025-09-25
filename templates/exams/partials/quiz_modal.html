@@ -27,7 +27,7 @@
     {% endfor %}
 
     <div class="d-flex justify-content-between align-items-center mt-3">
-      <button type="button" id="submitAttemptBtn" class="btn btn-success">Submit Quiz</button>
+      <button type="button" id="submitAttemptBtn" class="btn btn-success">Submit Exam</button>
       <div id="autosaveStatus" class="small text-muted"></div>
     </div>
   </form>
@@ -36,8 +36,8 @@
 <script>
 (function(){
   const attemptId = "{{ attempt.id }}";
-  const submitUrl = "{% url 'exams:api_submit_answer' %}";
-  const submitAttemptUrl = "{% url 'exams:api_submit_attempt' %}";
+  const submitUrl = "{% url 'submit_answer' attempt.id %}";
+  const submitAttemptUrl = "{% url 'submit_attempt' attempt.id %}";
   const csrftoken = "{{ csrf_token }}";
 
   // Timer: compute remaining time from attempt.end_time if present

@@ -2,7 +2,15 @@
 {% block title %} Edit Exam {% endblock %}
 {% block content %}
 <div class="container mt-4">
-  <h2>Edit Exam</h2>
+  <div class="d-flex justify-content-between align-items-center mt-3">
+        <h1 class="fw-bold mb-3"> Edit Exam</h1>
+          <nav class="d-flex gap-3">
+            <a class="btn btn-dark" style="width: 60px; height: 40px;font-size: 15px;" href="{% url 'manage_quizzes' %}">Back</a>
+          </nav>
+        </div>
+      <br>
+
+    <!-- Hidden form to get CSRF token -->
   <form id="csrf-form" style="display:none;">{% csrf_token %}</form>
 
   <div id="alert-area"></div>
@@ -66,7 +74,7 @@
   // For brevity in this message, I'll assume you copied the same functions (addQuestionBlock, addChoice, renderQuestionBlockFromData)
   // Now fetch quiz JSON and prefill
   async function fetchQuizAndPrefill() {
-    const res = await fetch("{% url 'quiz_json' quiz.id %}");
+    const res = await fetch("{% url 'quiz_json_1' quiz.id %}");
     const data = await res.json();
     if (!data.ok) { alert(data.error || 'Failed to load quiz'); return; }
     const q = data.quiz;
@@ -137,7 +145,7 @@
         body: JSON.stringify(payload)
       });
       const d = await res.json();
-      if (!d.ok) { alert(d.error || 'Failed'); } else { alert('Saved'); window.location.href = "{% url 'dashboard' %}"; }
+      if (!d.ok) { alert(d.error || 'Failed'); } else { alert('Saved'); window.location.href = "{% url 'manage_quizzes' %}"; }
     } catch (err) { console.error(err); alert('Network error'); }
   });
 

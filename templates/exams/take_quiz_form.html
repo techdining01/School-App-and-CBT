@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Take Quiz: {{ quiz.title }}</h2>
+<h2>Take Exam: {{ quiz.title }}</h2>
 
 <form method="post">
   {% csrf_token %}
@@ -30,6 +30,6 @@
     </div>
   {% endfor %}
 
-  <button type="submit" class="btn btn-primary">Submit Quiz</button>
+  <button type="submit" class="btn btn-primary">Submit Exam</button>
 </form>
 {% endblock %}

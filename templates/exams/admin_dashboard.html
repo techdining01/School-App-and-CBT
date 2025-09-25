@@ -20,7 +20,7 @@
       <div class="card mb-3">
         <div class="card-header d-flex justify-content-between">
           <strong>Pending Users</strong>
-          <small>Auto-refresh every 5s</small>
+          <small>Auto-refresh every 10s</small>
         </div>
         <div class="card-body p-0">
           <table class="table table-hover mb-0">
@@ -33,7 +33,7 @@
    
         <!-- Quizzes list (paginated) -->
       <div class="card mb-3">
-        <div class="card-header"><strong>Available Exams</strong></div>
+        <div class="card-header d-flex justify-content-between"><strong>Available Exams</strong><small>Auto-refresh every 10s</small></div>
         <div class="card-body">
           <div id="quizzes-list"></div>
           <nav><ul class="pagination" id="quizzes-pagination"></ul></nav>
@@ -52,6 +52,7 @@
               <select name="role" id="broadcastRole" class="form-select">
                 <option value="student">Students</option>
                 <option value="teacher">Teachers</option>
+                <option value="superadmin">Superadmin</option>
               </select>
             </div>
             <div class="mb-2">
@@ -72,7 +73,7 @@
         <div class="card-header"><strong>Leaderboard</strong></div>
         <div class="card-body p-0">
           <table class="table mb-0">
-            <thead class="table-light"><tr><th>#</th><th>Student</th><th>Avg Score</th></tr></thead>
+            <thead class="table-light"><tr><th>#</th><th>Student</th><th>First Name</th><th>Class</th><th>Avg Score</th></tr></thead>
             <tbody id="leaderboard"></tbody>
           </table>
         </div>
@@ -235,18 +236,32 @@ async function fetchDashboard(page_logs=1, page_quizzes=1) {
   // Leaderboard
   let lbHtml = "";
   data.leaderboard.forEach((l, idx) => {
-    lbHtml += `<tr><td>${idx+1}</td><td>${l.username}</td><td>${l.avg_score.toFixed(2)}</td></tr>`;
+    lbHtml += `<tr><td>${idx+1}</td><td>${l.username}</td><td>${l.first_name}</td><td>${l.class}</td><td>${l.avg_score.toFixed(2)}</td></tr>`;
   });
   document.getElementById("leaderboard").innerHTML = lbHtml;
 
+ 
   // Logs (paginated)
   let logsHtml = "";
-  data.logs.forEach(l => {
-    logsHtml += `<li class="list-group-item">${l.user} — ${l.action} <div class="small text-muted">${new Date(l.timestamp).toLocaleString()}</div></li>`;
+    data.logs.forEach(l => {
+    // Build details string dynamically
+    let detailsHtml = "";
+    if (l.details) {
+      for (const [key, value] of Object.entries(l.details)) {
+        detailsHtml += `<div><strong>${key}:</strong> ${JSON.stringify(value)}</div>`;
+      }
+    }
+
+    logsHtml += `
+      <li class="list-group-item"><strong>${l.user} — ${l.action_type}</strong> - ${detailsHtml}
+        <div class="small text-muted">${new Date(l.timestamp).toLocaleString()}</div>
+      </li>
+    `;
   });
+
   document.getElementById("logs").innerHTML = logsHtml;
 
-  // Notifications
+   // Notifications
   let notifHtml = "";
   data.notifications.forEach(n => {
     notifHtml += `<li class="list-group-item">${n.message} <div class="small text-muted">${new Date(n.created_at).toLocaleString()}</div></li>`;
@@ -364,7 +379,7 @@ function loadAdminDashboard() {
     });
 }
 loadAdminDashboard();
-setInterval(loadAdminDashboard, 5000);
+setInterval(loadAdminDashboard, 10000);
 </script>
 
 <script>
@@ -417,10 +432,10 @@ async function viewQuiz(quizId) {
       `;
       new bootstrap.Modal(document.getElementById("quizDetailModal")).show();
     } else {
-      alert("Error: " + (data.error || "Could not fetch quiz details"));
+      alert("Error: " + (data.error || "Could not fetch exam details"));
     }
   } catch (err) {
-    alert("Failed to load quiz details.");
+    alert("Failed to load exam details.");
   }
 }
 

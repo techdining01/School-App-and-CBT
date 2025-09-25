@@ -36,7 +36,7 @@
           </div>
           <div class="mb-2">
             <label>Target</label>
-            <select name="target" class="form-control" required>
+            <select name="recipient" class="form-control" required>
               <option value="admins">Admins</option>
               <option value="students">Students</option>
               {% comment %} <option value="all">Admins + Students</option> {% endcomment %}
@@ -120,11 +120,11 @@
     </div>
   </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <!-- CSRF -->
 <form style="display:none;">{% csrf_token %}</form>
 {% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 // Auto-refresh dashboard every 10s
 function fetchTeacherDashboard() {
@@ -133,31 +133,73 @@ function fetchTeacherDashboard() {
     .then(data => {
       // Render Summary
       const summaryArea = document.getElementById("summary-area");
-      summaryArea.innerHTML = `
-        <p><strong>Total Attempts:</strong> ${data.summary.total_attempts}</p>
-        <p><strong>Auto Graded:</strong> ${data.summary.auto_graded_count}</p>
-        <p><strong>Pending Subjectives:</strong> ${data.summary.pending_subjectives}</p>
+      summaryArea.innerHTML = `<div class="row">
+        <div class="col-md-6">
+          <p><strong>Teacher:</strong> ${data.summary.teacher}</p>
+          <p><strong>Class:</strong> ${data.summary.student_class}</p>
+          <p><strong>Total Exams for ${data.summary.student_class}:</strong> ${data.summary.total_quizzes}</p>
+          <p><strong>My Exams for ${data.summary.student_class}:</strong> ${data.summary.my_quizzes}</p>
+          <p><strong>Total Exams Attempted:</strong> ${data.summary.attempts}</p>
+        </div>
+        <div class="col-md-6">
+          <p><strong>Objectives:</strong> ${data.summary.objectives}</p>
+          <p><strong>Pending Subjectives:</strong> ${data.summary.pended}</p>
+          <p><strong>Graded Subjectives:</strong> ${data.summary.graded}</p>
+          <p><strong>Total Students in Class:</strong> ${data.summary.total_students}</p>
+        </div>
+      </div>
       `;
 
       // Render Quizzes
       const quizArea = document.getElementById("quizzes-area");
       quizArea.innerHTML = data.quizzes.map(q =>
-        `<div><strong>${q.title}</strong> (${q.subject__name}) <br>
-         ${q.start_time} → ${q.end_time}</div>`
+        `<div><strong>${q.title}</strong> (${q.class_name}) <br>
+         ${q.created_at} → ${q.end_time}</div>`
       ).join("<hr>");
 
       // Render Leaderboard
       const lb = document.getElementById("leaderboard-list");
-      lb.innerHTML = data.leaderboard.length
-        ? data.leaderboard.map((s, i) =>
+      lb.innerHTML = data.performance.length
+        ? data.performance.map((s, i) =>
           `<li class="list-group-item d-flex justify-content-between">
-             <span>${i+1}. ${s.student__username}</span>
+             <span>${i+1}. ${s.attempt__student__username}</span>
              <span><strong>${s.avg_score ? s.avg_score.toFixed(2) : 0}</strong></span>
            </li>`
         ).join("")
         : "<li class='list-group-item'>No data yet</li>";
 
-      // TODO: Render notifications, grading, performance chart
+      // Render Pending Grading tasks
+      const gradingArea = document.getElementById("grading-area");
+      gradingArea.innerHTML = data.grading.length
+        ? data.grading.map(t =>
+          `<div><strong>${t.quiz__title}</strong> - ${t.attempt__student__username} <br>
+           Started: ${t.started_at} | Score: ${t.score || 0}</div>`
+        ).join("<hr>")
+        : "<p>No pending grading tasks</p>";
+        
+      // Render Notifications
+      const notifArea = document.getElementById("notifications-list");
+      notifArea.innerHTML = data.notifications.length
+        ? data.notifications.map(n =>
+          `<li class="list-group-item">
+             <div>${n.message}</div>
+             <small class="text-muted">${n.created_at}</small>
+            </li>`
+        ).join("")
+        : "<li class='list-group-item'>No new notifications</li>";
+      document.getElementById("notif-count").innerText = data.notifications.length  ;
+            
+      // Update pagers
+      document.getElementById("quizzes-pager").innerText = `${data.summary.quiz_page} `;
+      document.getElementById("grading-pager").innerText = `${data.summary.grade_page} `;  
+      document.getElementById("notif-pager").innerText = `${data.summary.notif_page}`;  
+      // Enable/disable pager buttons
+      document.getElementById("quizzes-prev").disabled = data.summary.quiz_page = 1;
+      document.getElementById("quizzes-next").disabled = data.summary.quiz_page >= data.pagination.quiz_num_pages;
+      document.getElementById("grading-prev").disabled = data.summary.grading_page = 1;
+      document.getElementById("grading-next").disabled = data.summary.grading_page >= data.grading_total_pages;
+      document.getElementById("notif-prev").disabled = data.summary.notif_page <= 1;  
+      document.getElementById("notif-next").disabled = data.summary.notif_page >= data.notifications.notif_num_pages;
     });
 }
 fetchTeacherDashboard();

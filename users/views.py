@@ -68,6 +68,9 @@ def teacheradminprofile(request, user_id):
             profile = form.save(commit=False)
             profile.user = user
             profile.save()
+            if request.user.is_authenticated:
+                messages.success(request, f'{user.role.title()} profile updated successfully. wait for approval')
+                return redirect('dashboard')
             messages.success(request, f'{user.role.title()} profile created successfully. wait for approval')
             return redirect('login')
     else:
@@ -91,37 +94,52 @@ def edit_user(request, user_id):
     """Allow Student, Teacher, or Admin to update their profile."""
 
     user = get_object_or_404(User, id=user_id)
-    
-    # Select correct form by role
-    if user.role == "student":
-        form_class = EditUserRegistrationForm
-    else:  # teacher or admin
-        form_class = EditTeacherAdminForm
+
+    # Pick form by role
+    form_class = EditUserRegistrationForm if user.role == "student" else EditTeacherAdminForm
 
     if request.method == "POST":
+        old_data = {
+            "username": user.username,
+            "email": user.email,
+            "role": user.role,
+        }
         form = form_class(request.POST, request.FILES, instance=user)
         if form.is_valid():
-            form.save()
+            updated_user = form.save()
+            new_data = {
+                "username": updated_user.username,
+                "email": updated_user.email,
+                "role": updated_user.role,
+            }
+            # Log the edit
+            ActionLog.objects.create(
+                user=request.user,
+                action_type="Edit User",
+                model_name="User",
+                object_id=str(updated_user.id),
+                details={"old": old_data, "new": new_data, "target": updated_user.username},
+            )
             messages.success(request, "Profile updated successfully!")
 
-            # Redirect back to dashboard
-            if user.is_authenticated == "student":
+                # Redirect back to dashboard
+            if request.user.is_authenticated == "student":
                 return redirect("student_dashboard")
-            elif user.is_authenticated == "teacher":
+            elif request.user.is_authenticated == "teacher":
                 return redirect("teacher_dashboard")
             else:
                 return redirect("admin_dashboard")
     else:
         form = form_class(instance=user)
 
+
     return render(request, "users/edit_profile.html", {"form": form, "user": user})
 
+            
 
 def create_user(request):
     return redirect('signup')
 
-# def edit_user(request):
-#     return redirect('edit_profile')
 
 
 def is_admin_or_superadmin(user):
