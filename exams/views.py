@@ -9,7 +9,7 @@ from django.db.models import Sum, Avg, Count, Min, Max, Q
 from django.template.loader import render_to_string
 from django.core.paginator import Paginator
 from django.views.decorators.http import require_POST, require_http_methods
-import json, os, io
+import json, os, io, datetime
 from io import BytesIO
 import openpyxl
 from openpyxl import load_workbook
@@ -26,6 +26,8 @@ from django.db import transaction
 # ✅ Always use get_user_model
 from django.contrib.auth import get_user_model
 User = get_user_model()
+# Do NOT assign settings.AUTH_USER_MODEL (that's a string) — use the model loaded earlier
+
 
 # Your models
 from .models import Quiz, Question, Choice, StudentQuizAttempt, ActionLog, Answer, Class, Subject,RetakeRequest
@@ -39,8 +41,6 @@ from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.contrib import messages
 from django.db.models import Avg
-
-
 
 
 
@@ -79,7 +79,7 @@ def superadmin_dashboard(request):
 
     # leaderboard: top students by average total_score (only graded attempts)
     leaderboard = (
-        StudentQuizAttempt.objects.filter(completed=True)
+        StudentQuizAttempt.objects.filter(is_submitted=True)
         .values("student__username")
         .annotate(avg_score=Avg("score"))
         .order_by("-avg_score")[:10]  # top 10
@@ -286,7 +286,7 @@ def admin_dashboard_data(request):
     ]
 
     # Leaderboard (top students by average obtained_marks across answers)
-    leaderboard_qs = StudentQuizAttempt.objects.filter(completed=True).values("student__username", 'student__first_name', 'student__student_class__name').annotate(avg_score=Avg("score")).order_by("-avg_score")[:10]
+    leaderboard_qs = StudentQuizAttempt.objects.filter(is_submitted=True).values("student__username", 'student__first_name', 'student__student_class__name').annotate(avg_score=Avg("score")).order_by("-avg_score")[:10]
 
     leaderboard = [{"username": x["student__username"], "first_name": x["student__first_name"], "class": x["student__student_class__name"], "avg_score": float(x["avg_score"] or 0)} for x in leaderboard_qs]
 
@@ -589,6 +589,8 @@ def student_review(request, student_id):
     attempts = StudentQuizAttempt.objects.filter(student=student).select_related("quiz")
     return render(request, "teacher/student_review.html", {"student": student, "attempts": attempts})
 
+
+
 # ----------------- RETAKE REQUEST -------------------
 @login_required
 @user_passes_test(is_teacher)
@@ -598,13 +600,13 @@ def approve_retake(request, quiz_id, student_id):
 
     attempt, _ = StudentQuizAttempt.objects.get_or_create(student=student, quiz=quiz)
     attempt.retake_allowed = True
-    attempt.completed = False
+    attempt.is_submitted = False
     attempt.end_time = None
     attempt.retake_count += 1
     attempt.save()
-
+  
     Notification.objects.create(user=student, message=f"You can now retake quiz: {quiz.title}")
-    ActionLog.objects.create(user=request.user, action="Approved Retake", model_name="Quiz", object_id=str(quiz.id))
+    ActionLog.objects.create(user=request.user, action="Approved Retake", model_name="Exam", object_id=str(quiz.id))
 
     return JsonResponse({"success": True})
 
@@ -637,7 +639,7 @@ def teacher_broadcast(request):
         if target == "admins":
             recipients = User.objects.filter(role="admin")
         elif target == "students":
-            recipients = User.objects.filter(role="student", classroom__in=request.user.classroom_set.all())
+            recipients = User.objects.filter(role="student", student_class__in=request.user.classroom_set.all())
         else:  # all
             recipients = User.objects.filter(role__in=["admin", "student"])
 
@@ -727,37 +729,6 @@ def mark_notification_read(request, notification_id):
 
 # ----------------------Teacher dashboard data endpoint (JSON) (for AJAX refresh)-------------------------#
 
-# @login_required
-# @user_passes_test(lambda u: u.role == "teacher")
-# def teacher_dashboard_data(request):
-#     teacher = request.user
-
-#     # Teacher’s created quizzes
-#     quizzes = Quiz.objects.filter(created_by=teacher)
-
-#     stats = {
-#         "total_quizzes": quizzes.count(),
-#         "published_quizzes": quizzes.filter(is_published=True).count(),
-#         "pending_quizzes": quizzes.filter(is_published=False).count(),
-#         "total_students_attempted": StudentQuizAttempt.objects.filter(quiz__in=quizzes, completed=True).values("student").distinct().count(),
-#     }
-
-#     # Leaderboard for teacher’s quizzes
-#     leaderboard_qs = (
-#         StudentQuizAttempt.objects.filter(quiz__in=quizzes, completed=True)
-#         .values("student__username")
-#         .annotate(avg_score=Avg("score"))
-#         .order_by("-avg_score")[:10]
-#     )
-#     leaderboard = [{"username": x["student__username"], "avg_score": float(x["avg_score"] or 0)} for x in leaderboard_qs]
-
-#     # Action logs
-#     actions = list(
-#         ActionLog.objects.filter(user=teacher).order_by("-timestamp")[:10].values("action", "timestamp")
-#     )
-
-#     return JsonResponse({"stats": stats, "leaderboard": leaderboard, "actions": actions})
-
 
 
 ###--------------------------------Student Dashboard -------------------------------###
@@ -821,22 +792,21 @@ def student_dashboard_data(request):
     } 
 
     # ---------------- Available quizzes (paginated) ----------------
+
     now = timezone.now()
     if student_class is None:
         available_qs = Quiz.objects.none()
     else:
         available_qs = Quiz.objects.filter(
-            subject__school_class=student_class,
-            is_published=True,
-            start_time__lte=now,
-            end_time__gte=now,
+            school_class__name=student_class,
+            is_published=True
         ).order_by("-created_at")
 
         # exclude quizzes already completed without retake allowed
         exclude_ids = StudentQuizAttempt.objects.filter(
-            student=student, completed=True, retake_allowed=False
+            student=student, is_submitted=True, retake_allowed=False,
         ).values_list("quiz_id", flat=True)
-        available_qs = available_qs.exclude(id__in=exclude_ids)
+        available_qs = available_qs.exclude(id__in=exclude_ids) 
 
     qp = Paginator(available_qs, quizzes_page_size)
     qp_obj = qp.get_page(quizzes_page)
@@ -846,7 +816,7 @@ def student_dashboard_data(request):
     for q in qp_obj:
         # check last attempt status
         last_attempt = StudentQuizAttempt.objects.filter(student=student, quiz=q).order_by("-started_at").first()
-        already_completed = StudentQuizAttempt.objects.filter(student=student, quiz=q, completed=True).exists()
+        already_completed = StudentQuizAttempt.objects.filter(student=student, quiz=q, is_submitted=True).exists()
         student_retake_override = bool(last_attempt and getattr(last_attempt, "retake_allowed", False))
         allow_retake_global = getattr(q, "allow_retake", False) if hasattr(q, "allow_retake") else False
 
@@ -909,9 +879,9 @@ def student_dashboard_data(request):
             "obtained_marks": obtained,
             "total_marks": total_marks,
             "pending_subjectives": pending_subjectives_count,
-            "completed": bool(a.completed),
+            "completed": bool(a.is_submitted),
             "started_at": a.started_at.isoformat() if getattr(a, "started_at", None) else None,
-            "completed_at": getattr(a, "completed_at", None).isoformat() if getattr(a, "completed_at", None) else None,
+            "completed_at": getattr(a, "submitted_at", None).isoformat() if getattr(a, "submitted_at", None) else None,
             "wrong_answer": wrong_review,
             "retake_count": getattr(a, "retake_count", 0),
         })
@@ -920,7 +890,7 @@ def student_dashboard_data(request):
 
     # ---------------- Leaderboard (top 10 students) ----------------
     lb_qs = (
-        StudentQuizAttempt.objects.filter(completed=True)
+        StudentQuizAttempt.objects.filter(is_submitted=True)
         .values("student__id", "student__username", "student__first_name", "student__last_name")
         .annotate(avg_score=Avg("score"))
         .order_by("-avg_score")[:10]
@@ -936,6 +906,7 @@ def student_dashboard_data(request):
     ]
 
     # ---------------- Performance Chart (per subject in student's class) ----------------
+    
     perf_qs = Answer.objects.filter(
         attempt__student=student,
         attempt__quiz__subject__school_class=student_class
@@ -1102,82 +1073,82 @@ def api_notifications_mark_read(request):
 ####--------------------------No 1 Endpoint Ended----------------------------####
 
 
-def _is_student(user):
-    return user.is_authenticated and user.role == "student"
+# def _is_student(user):
+#     return user.is_authenticated and user.role == "student"
 
 
-@require_http_methods(["GET"])
-def api_student_quizzes(request):
-    """Return available quizzes for the logged-in student (AJAX)."""
-    if not _is_student(request.user):
-        return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
+# @require_http_methods(["GET"])
+# def api_student_quizzes(request):
+#     """Return available quizzes for the logged-in student (AJAX)."""
+#     if not _is_student(request.user):
+#         return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
 
-    now = timezone.now()
-    # student's class is stored on user.student_class (per your model)
-    student_class = getattr(request.user, "student_class", None)
+#     now = timezone.now()
+#     # student's class is stored on user.student_class (per your model)
+#     student_class = getattr(request.user, "student_class", None)
 
-    # exclude quizzes the student already completed unless allow_retake or specific retake allowed
-    completed_q_ids = StudentQuizAttempt.objects.filter(
-        student=request.user, completed=True
-    ).values_list("quiz_id", flat=True)
+#     # exclude quizzes the student already completed unless allow_retake or specific retake allowed
+#     completed_q_ids = StudentQuizAttempt.objects.filter(
+#         student=request.user, is_submitted=True
+#     ).values_list("quiz_id", flat=True)
 
-    # Build queryset: published, in time window, for the student's class
-    qset = Quiz.objects.filter(
-        is_published=True,
-        subject__school_class=student_class,
-        start_time__lte=now,
-        end_time__gte=now,
-    ).order_by("-created_at")
+#     # Build queryset: published, in time window, for the student's class
+#     qset = Quiz.objects.filter(
+#         is_published=True,
+#         subject__school_class=student_class,
+#         start_time__lte=now,
+#         end_time__gte=now,
+#     ).order_by("-created_at")
 
-    quizzes = []
-    for q in qset:
-        already_completed = q.id in completed_q_ids
-        can_retake_global = getattr(q, "allow_retake", False)
-        # find last attempt
-        last_attempt = StudentQuizAttempt.objects.filter(student=request.user, quiz=q).order_by("-started_at").first()
-        # student-specific retake override
-        student_retake_override = last_attempt.retake_allowed if last_attempt else False
-        show = (not already_completed) or can_retake_global or student_retake_override
-        quizzes.append({
-            "id": q.id,
-            "title": q.title,
-            "subject": q.subject.name,
-            "class_name": q.subject.school_class.name,
-            "start_time": q.start_time.isoformat(),
-            "end_time": q.end_time.isoformat(),
-            "duration_minutes": q.duration_minutes,
-            "allow_retake": bool(can_retake_global),
-            "already_completed": bool(already_completed),
-            "show": show,
-        })
+#     quizzes = []
+#     for q in qset:
+#         already_completed = q.id in completed_q_ids
+#         can_retake_global = getattr(q, "allow_retake", False)
+#         # find last attempt
+#         last_attempt = StudentQuizAttempt.objects.filter(student=request.user, quiz=q).order_by("-started_at").first()
+#         # student-specific retake override
+#         student_retake_override = last_attempt.retake_allowed if last_attempt else False
+#         show = (not already_completed) or can_retake_global or student_retake_override
+#         quizzes.append({
+#             "id": q.id,
+#             "title": q.title,
+#             "subject": q.subject.name,
+#             "class_name": q.subject.school_class.name,
+#             "start_time": q.start_time.isoformat(),
+#             "end_time": q.end_time.isoformat(),
+#             "duration_minutes": q.duration_minutes,
+#             "allow_retake": bool(can_retake_global),
+#             "already_completed": bool(already_completed),
+#             "show": show,
+#         })
 
-    return JsonResponse({"ok": True, "quizzes": [q for q in quizzes if q["show"]]})
+#     return JsonResponse({"ok": True, "quizzes": [q for q in quizzes if q["show"]]})
 
 
-@require_http_methods(["GET"])
-def api_student_attempts(request):
-    """Return past attempts for the logged-in student."""
-    if not _is_student(request.user):
-        return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
+# @require_http_methods(["GET"])
+# def api_student_attempts(request):
+#     """Return past attempts for the logged-in student."""
+#     if not _is_student(request.user):
+#         return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
 
-    attempts_qs = StudentQuizAttempt.objects.filter(student=request.user).select_related("quiz").order_by("-started_at")
-    attempts = []
-    for a in attempts_qs:
-        attempts.append({
-            "id": a.id,
-            "quiz_id": a.quiz.id,
-            "quiz": a.quiz.title,
-            "score": float(a.score or 0.0),
-            "retake_count": getattr(a, "retake_count", 0),
-            "completed": bool(a.completed),
-            "started_at": a.started_at.isoformat() if getattr(a, "started_at", None) else None,
-            "end_time": a.end_time.isoformat() if getattr(a, "end_time", None) else None,
-            # completed_at might not exist; use getattr
-            "completed_at": getattr(a, "completed_at", None) and a.completed_at.isoformat() or None,
-            "can_resume": getattr(a, "can_resume", lambda: False)() if hasattr(a, "can_resume") else (not a.completed and (not a.end_time or timezone.now() < a.end_time)),
-            "can_retake": bool(getattr(a, "retake_allowed", False) or getattr(a.quiz, "allow_retake", False))
-        })
-    return JsonResponse({"ok": True, "attempts": attempts})
+#     attempts_qs = StudentQuizAttempt.objects.filter(student=request.user).select_related("quiz").order_by("-started_at")
+#     attempts = []
+#     for a in attempts_qs:
+#         attempts.append({
+#             "id": a.id,
+#             "quiz_id": a.quiz.id,
+#             "quiz": a.quiz.title,
+#             "score": float(a.score or 0.0),
+#             "retake_count": getattr(a, "retake_count", 0),
+#             "completed": bool(a.completed),
+#             "started_at": a.started_at.isoformat() if getattr(a, "started_at", None) else None,
+#             "end_time": a.end_time.isoformat() if getattr(a, "end_time", None) else None,
+#             # completed_at might not exist; use getattr
+#             "completed_at": getattr(a, "completed_at", None) and a.completed_at.isoformat() or None,
+#             "can_resume": getattr(a, "can_resume", lambda: False)() if hasattr(a, "can_resume") else (not a.completed and (not a.end_time or timezone.now() < a.end_time)),
+#             "can_retake": bool(getattr(a, "retake_allowed", False) or getattr(a.quiz, "allow_retake", False))
+#         })
+#     return JsonResponse({"ok": True, "attempts": attempts})
 
 
 @require_http_methods(["GET"])
@@ -1224,178 +1195,6 @@ def api_notifications_mark_read(request):
 # old API -------------------------------------------------#
 
 
-@require_http_methods(["GET"])
-def api_take_quiz(request):
-    """
-    Returns rendered HTML for the quiz modal. Query params:
-      - quiz_id (required)
-      - mode: 'start' (default) or 'retake'
-    """
-    if not _is_student(request.user):
-        return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
-
-    quiz_id = request.GET.get("quiz_id")
-    mode = request.GET.get("mode", "start")
-    if not quiz_id:
-        return JsonResponse({"ok": False, "error": "quiz_id required"}, status=400)
-
-    quiz = get_object_or_404(Quiz, id=quiz_id)
-    now = timezone.now()
-
-    # Basic availability checks (published & time window)
-    if not quiz.is_published:
-        return JsonResponse({"ok": False, "error": "Exam not published"}, status=403)
-    if not (quiz.start_time <= now <= quiz.end_time):
-        # allow retake if mode == retake and admin override, otherwise forbid
-        if not (mode == "retake" and (quiz.allow_retake or request.user.is_staff)):
-            return JsonResponse({"ok": False, "error": "Exam not currently available"}, status=403)
-
-    # Find or create attempt
-    attempt = None
-    if mode == "start":
-        # resume existing attempt if not completed and not expired
-        attempt = StudentQuizAttempt.objects.filter(student=request.user, quiz=quiz, completed=False).order_by("-started_at").first()
-        if attempt and not getattr(attempt, "can_resume", lambda: True)():
-            attempt = None
-        if not attempt:
-            # create new attempt
-            attempt = StudentQuizAttempt.objects.create(
-                student=request.user,
-                quiz=quiz,
-                started_at=timezone.now(),
-                end_time=timezone.now() + timezone.timedelta(minutes=quiz.duration_minutes),
-                completed=False,
-                retake_allowed=False,
-                retake_count=0,
-                score=0.0
-            )
-    elif mode == "retake":
-        # allow retake if quiz.allow_retake or last attempt has retake_allowed True
-        last_attempt = StudentQuizAttempt.objects.filter(student=request.user, quiz=quiz).order_by("-started_at").first()
-        if not (quiz.allow_retake or (last_attempt and last_attempt.retake_allowed)):
-            return JsonResponse({"ok": False, "error": "Retake not allowed"}, status=403)
-        # create a new attempt
-        prev_count = last_attempt.retake_count if last_attempt else 0
-        attempt = StudentQuizAttempt.objects.create(
-            student=request.user,
-            quiz=quiz,
-            started_at=timezone.now(),
-            end_time=timezone.now() + timezone.timedelta(minutes=quiz.duration_minutes),
-            completed=False,
-            retake_allowed=False,
-            retake_count=(prev_count + 1),
-            score=0.0
-        )
-
-    # Prefetch questions & choices
-    questions = list(quiz.questions.prefetch_related("choices").all())
-    # Render partial template with context (use request to have csrf_token)
-    context = {"quiz": quiz, "attempt": attempt, "questions": questions}
-    html = render_to_string("exams/take_quiz_ajax.html", context=context, request=request)
-    return JsonResponse({"ok": True, "quiz_title": quiz.title, "html": html})
-
-
-@require_http_methods(["POST"])
-def api_submit_answer(request):
-    """Save one answer (autosave). Payload JSON: {attempt_id, question_id, answer, type}"""
-    if not _is_student(request.user):
-        return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
-
-    try:
-        payload = json.loads(request.body.decode())
-    except Exception:
-        return JsonResponse({"ok": False, "error": "invalid json"}, status=400)
-
-    attempt_id = payload.get("attempt_id")
-    qid = payload.get("question_id")
-    answer = payload.get("answer")
-    qtype = payload.get("type")
-
-    if not all([attempt_id, qid]):
-        return JsonResponse({"ok": False, "error": "attempt_id and question_id required"}, status=400)
-
-    attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id, student=request.user)
-    # do not allow saving if attempt is completed or expired
-    if attempt.completed:
-        return JsonResponse({"ok": False, "error": "attempt already completed"}, status=400)
-    if attempt.end_time and timezone.now() > attempt.end_time:
-        return JsonResponse({"ok": False, "error": "attempt time expired"}, status=400)
-
-    question = get_object_or_404(Question, id=qid, quiz=attempt.quiz)
-
-    # create or update Answer
-    ans_obj, _ = Answer.objects.get_or_create(attempt=attempt, question=question)
-
-    if question.question_type == "objective":
-        # answer is choice id
-        try:
-            choice = Choice.objects.get(id=int(answer), question=question)
-        except Exception:
-            choice = None
-        ans_obj.selected_choice = choice
-        ans_obj.text_answer = None
-        # auto-grade objective
-        if choice and getattr(choice, "is_correct", False):
-            ans_obj.obtained_marks = float(question.marks)
-        else:
-            ans_obj.obtained_marks = 0.0
-        ans_obj.is_pending = False
-    else:
-        # subjective
-        ans_obj.text_answer = str(answer or "")
-        ans_obj.selected_choice = None
-        ans_obj.obtained_marks = None  # teacher will grade later
-        ans_obj.is_pending = True
-
-    ans_obj.save()
-    return JsonResponse({"ok": True})
-
-
-@require_http_methods(["POST"])
-def api_submit_attempt(request):
-    """Mark an attempt as submitted, compute score for objective parts and persist. Payload: {attempt_id}"""
-    if not _is_student(request.user):
-        return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
-
-    try:
-        payload = json.loads(request.body.decode())
-    except Exception:
-        return JsonResponse({"ok": False, "error": "invalid json"}, status=400)
-
-    attempt_id = payload.get("attempt_id")
-    if not attempt_id:
-        return JsonResponse({"ok": False, "error": "attempt_id required"}, status=400)
-
-    attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id, student=request.user)
-    if attempt.completed:
-        return JsonResponse({"ok": False, "error": "attempt already submitted"}, status=400)
-
-    # compute score from answers: sum of obtained_marks where not None
-    answers = Answer.objects.filter(attempt=attempt)
-    total = 0.0
-    for a in answers:
-        # For objectives, obtained_marks is set earlier
-        if a.obtained_marks is None:
-            # subjective unanswered by teacher -> 0 for now
-            continue
-        try:
-            total += float(a.obtained_marks)
-        except Exception:
-            pass
-
-    attempt.score = total
-    attempt.completed = True
-    # set completed_at if field exists
-    if hasattr(attempt, "completed_at"):
-        attempt.completed_at = timezone.now()
-    attempt.save()
-
-    # log
-    ActionLog.objects.create(user=request.user, action="Submitted attempt", model_name="StudentQuizAttempt", object_id=str(attempt.id),
-                             details={"score": attempt.score})
-
-    return JsonResponse({"ok": True, "score": float(attempt.score)})
-
 # -------------------------- No 2 Endpoint Ended -------------------------- #
 
 
@@ -1423,6 +1222,67 @@ def create_user(request):
         return redirect("manage_users")
 
     return render(request, "exams/create_user.html")
+
+
+
+# -------------------- CLASSES --------------------
+def manage_classes_subjects(request):
+    return render(request, 'exams/class_subject.html')
+
+def serialize_all():
+    """Return all classes and subjects in one dict"""
+    classes = list(Class.objects.values("id", "name"))
+    subjects = list(Subject.objects.values("id", "name", "school_class_id"))
+    return {"classes": classes, "subjects": subjects}
+
+@csrf_exempt
+def class_subject_crud(request):
+    if request.method == "GET":
+        return JsonResponse(serialize_all(), safe=False)
+
+    if request.method == "POST":
+        data = json.loads(request.body)
+        action = data.get("action")
+
+        # ✅ CREATE CLASS
+        if action == "create_class":
+            Class.objects.create(name=data["name"])
+
+        # ✅ UPDATE CLASS
+        elif action == "update_class":
+            try:
+                cls = Class.objects.get(pk=data["id"])
+                cls.name = data["name"]
+                cls.save()
+            except Class.DoesNotExist:
+                return JsonResponse({"error": "Class not found"}, status=404)
+
+        # ✅ DELETE CLASS
+        elif action == "delete_class":
+            Class.objects.filter(pk=data["id"]).delete()
+
+        # ✅ CREATE SUBJECT
+        elif action == "create_subject":
+            Subject.objects.create(name=data["name"], school_class_id=data["class_id"])
+
+        # ✅ UPDATE SUBJECT
+        elif action == "update_subject":
+            try:
+                subj = Subject.objects.get(pk=data["id"])
+                subj.name = data["name"]
+                subj.school_class_id = data["class_id"]
+                subj.save()
+            except Subject.DoesNotExist:
+                return JsonResponse({"error": "Subject not found"}, status=404)
+
+        # ✅ DELETE SUBJECT
+        elif action == "delete_subject":
+            Subject.objects.filter(pk=data["id"]).delete()
+
+        return JsonResponse(serialize_all(), safe=False)
+
+    return JsonResponse({"error": "Invalid request"}, status=400)
+
 
 
 # ---- QUIZ MANAGEMENT ----
@@ -1480,21 +1340,7 @@ def upload_quiz_excel(request):
     return render(request, "exams/upload_quiz_excel.html")
 
 
-@login_required
-@user_passes_test(is_admin)
-def sample_quiz_excel(request):
-    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    response["Content-Disposition"] = 'attachment; filename="sample_quiz.xlsx"'
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.append(["Title", "Subject", "Duration(minutes)"])
-    ws.append(["Sample Exam 1", "Mathematics", 30])
-    ws.append(["Sample Exam 2", "English", 40])
-    wb.save(response)
-    return response
-
-
+# -----------------------------Student Quiz List with Status---------------------------------#  
 from django.db.models import Q  
 
 def get_quizzes_with_status(student):
@@ -1512,7 +1358,7 @@ def get_quizzes_with_status(student):
     for quiz in quizzes:
         attempt = attempts_map.get(quiz.id)
 
-        if attempt and attempt.completed:
+        if attempt and attempt.is_submitted:
             if quiz.allow_retake:
                 status = "Available for Retake"
             else:
@@ -1542,12 +1388,12 @@ def approve_retake(request, quiz_id, student_id):
     # find last attempt or create a fresh one
     attempt, created = StudentQuizAttempt.objects.get_or_create(
         student=student, quiz=quiz,
-        defaults={"retake_allowed": True, "completed": False}
+        defaults={"retake_allowed": True, "is_submitted": False}
     )
 
     # mark retake
     attempt.retake_allowed = True
-    attempt.completed = False  # reset if admin wants them to take again
+    attempt.is_submitted = False  # reset if admin wants them to take again
     attempt.end_time = None
     attempt.retake_count += 1
     attempt.save()
@@ -1573,7 +1419,7 @@ def approve_retake(request, quiz_id, student_id):
 @user_passes_test(is_admin)
 def retake_requests_list(request):
     # Fetch only attempts where retake is pending
-    attempts = StudentQuizAttempt.objects.filter(retake_allowed=False, completed=True).select_related("student", "quiz").order_by("-started_at")
+    attempts = StudentQuizAttempt.objects.filter(retake_allowed=False, is_submitted=True).select_related("student", "quiz").order_by("-started_at")
 
     # Pagination
     paginator = Paginator(attempts, 10)  # 10 per page
@@ -1581,37 +1427,6 @@ def retake_requests_list(request):
     page_obj = paginator.get_page(page_number)
 
     return render(request, "exams/approve_retake.html", {"page_obj": page_obj})
-
-
-
-@login_required
-@user_passes_test(is_student)
-def request_retake(request, quiz_id):
-    quiz = get_object_or_404(Quiz, id=quiz_id)
-
-    # prevent duplicate pending requests
-    existing = RetakeRequest.objects.filter(student=request.user, quiz=quiz, status="pending").first()
-    if existing:
-        return JsonResponse({"error": "You already have a pending retake request for this exam."}, status=400)
-
-    reason = request.POST.get("reason", "No reason given")
-
-    req = RetakeRequest.objects.create(student=request.user, quiz=quiz, reason=reason)
-
-    # log + notify
-    ActionLog.objects.create(
-        user=request.user,
-        action="Requested Retake",
-        model_name="RetakeRequest",
-        object_id=str(req.id),
-        details={"quiz": quiz.title, "reason": reason}
-    )
-    Notification.objects.create(
-        user=quiz.created_by,  # teacher who owns quiz
-        message=f"{request.user.username} -- {request.user.first_name} requested a retake for {quiz.title}."
-    )
-
-    return JsonResponse({"success": True, "message": "Retake request submitted."})
 
 
 
@@ -1626,11 +1441,11 @@ def handle_retake_request(request, request_id):
         attempt, created = StudentQuizAttempt.objects.get_or_create(
             student=retake_req.student,
             quiz=retake_req.quiz,
-            defaults={"retake_allowed": True, "completed": False, "retake_count": 1}
+            defaults={"retake_allowed": True, "is_submitted": False, "retake_count": 1}
         )
         if not created:
             attempt.retake_allowed = True
-            attempt.completed = False
+            attempt.is_submitted = False
             attempt.end_time = None
             attempt.retake_count += 1
             attempt.save()
@@ -1845,7 +1660,7 @@ def leaderboard(request):
     Renders a leaderboard template showing top students by average score across their completed attempts.
     """
     # compute average attempt scores per student; use StudentQuizAttempt.score (we ensure it's set on submit)
-    qs = StudentQuizAttempt.objects.filter(completed=True).values("student").annotate(
+    qs = StudentQuizAttempt.objects.filter(is_submitted=True).values("student").annotate(
         avg_score=Avg("score"), attempts=Sum("score")
     ).order_by("-avg_score")[:50]
 
@@ -2012,7 +1827,7 @@ def import_quiz_excel(request):
     except Exception:
         return JsonResponse({"ok": False, "error": "Failed to read metadata"}, status=400)
 
-    title = meta.get("quiz_title") or meta.get("title")
+    title = meta.get("exam_title") or meta.get("title")
     class_name = meta.get("class_name")
     subject_name = meta.get("subject_name")
     start_time_s = meta.get("start_time")
@@ -2022,7 +1837,7 @@ def import_quiz_excel(request):
 
     # validate subject/class
     if not (class_name and subject_name and title):
-        return JsonResponse({"ok": False, "error": "Metadata must include class_name, subject_name and quiz_title"}, status=400)
+        return JsonResponse({"ok": False, "error": "Metadata must include class_name, subject_name and exam_title"}, status=400)
 
     try:
         school_class = Class.objects.get(name__iexact=str(class_name).strip())
@@ -2166,8 +1981,8 @@ def delete_quiz_ajax(request, quiz_id):
     quiz.delete()
     ActionLog.objects.create(
     user=request.user,
-    action_type= "Delete Quiz",
-    model_name="Quiz",
+    action_type= "Delete Exam",
+    model_name="Exam",
     object_id=str(quiz.id),
     details={"title": quiz.title, "subject": quiz.subject.name, "action": "deleted"},
 )
@@ -2279,8 +2094,8 @@ def edit_quiz_ajax(request, quiz_id):
             # success
             ActionLog.objects.create(
             user=request.user,
-            action_type="Edit Quiz",
-            model_name="Quiz",
+            action_type="Edit Exam",
+            model_name="Exam",
             object_id=str(quiz.id),
             details={"title": quiz.title, "subject": quiz.subject.name, "action": "edited" },
         )
@@ -2361,14 +2176,14 @@ from django.http import HttpResponse
 def download_excel_template(request):
     wb = Workbook()
     ws = wb.active
-    ws.title = "QuizTemplate"
+    ws.title = "ExamTemplate"
 
     # metadata rows
-    ws['A1'] = 'quiz_title'; ws['B1'] = 'My Exam Title'
+    ws['A1'] = 'exam_title'; ws['B1'] = settings.SCHOOL_NAME + " " + "FIRST TERM EXAM"
     ws['A2'] = 'class_name'; ws['B2'] = 'JSS1'
     ws['A3'] = 'subject_name'; ws['B3'] = 'Mathematics'
-    ws['A4'] = 'start_time'; ws['B4'] = timezone.now()
-    ws['A5'] = 'end_time'; ws['B5'] = timezone.now()
+    ws['A4'] = 'start_time'; ws['B4'] = None
+    ws['A5'] = 'end_time'; ws['B5'] = None
     ws['A6'] = 'duration_minutes'; ws['B6'] = 60
     ws['A7'] = 'is_published'; ws['B7'] = 'True'
 
@@ -2384,7 +2199,7 @@ def download_excel_template(request):
     # example question row
     ws.cell(row=10, column=1, value='What is 2+2?')
     ws.cell(row=10, column=2, value='objective')
-    ws.cell(row=10, column=3, value=1)
+    ws.cell(row=10, column=3, value='1')
     ws.cell(row=10, column=4, value='3')
     ws.cell(row=10, column=5, value='0')
     ws.cell(row=10, column=6, value='4')
@@ -2392,7 +2207,7 @@ def download_excel_template(request):
 
     # prepare response
     response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    response['Content-Disposition'] = 'attachment; filename=quiz_template.xlsx'
+    response['Content-Disposition'] = 'attachment; filename=Exam_template.xlsx'
     wb.save(response)
     return response
 
@@ -2404,376 +2219,59 @@ def _is_student(user):
     return user.is_authenticated and getattr(user, "role", None) == "student"
 
 
-@login_required
-@require_http_methods(["GET"])
-def take_quiz_view(request, quiz_id):
-    """
-    Render the interactive quiz taking page.
-    Creates or resumes a StudentQuizAttempt if allowed.
-    """
-    if not is_student(request.user):
-        return HttpResponseForbidden("forbidden")
+# @login_required
+# @require_http_methods(["GET"])
+# def take_quiz_view(request, quiz_id):
+#     if not is_student(request.user):
+#         return HttpResponseForbidden("forbidden")
 
-    quiz = get_object_or_404(Quiz, id=quiz_id)
-    now = timezone.now()
+#     quiz = get_object_or_404(Quiz, id=quiz_id)
+#     now = timezone.now()
 
-    # Basic availability
-    available = quiz.is_published and (quiz.start_time <= now <= quiz.end_time)
-    # allow view if student already attempted (for review) or resume/retake conditions
-    # find existing active attempt
-    attempt = StudentQuizAttempt.objects.filter(student=request.user, quiz=quiz, completed=False).order_by("-started_at").first()
+#     available = quiz.is_published and (quiz.start_time <= now <= quiz.end_time)
 
-    if attempt:
-        # resume attempt only if not expired
-        if attempt.end_time and timezone.now() > attempt.end_time:
-            # expired
-            attempt = None
-    if not attempt:
-        # Not resuming; check if quiz open or allow retake
-        if not available:
-            # if quiz closed, but global retake allowed OR admin override, allow creation if student has retake_allowed flag from a previous attempt
-            last_attempt = StudentQuizAttempt.objects.filter(student=request.user, quiz=quiz).order_by("-started_at").first()
-            allow_ret = getattr(quiz, "allow_retake", False) or (last_attempt and last_attempt.retake_allowed)
-            if not allow_ret:
-                # if already completed and no retake allowed - redirect to result/review
-                if last_attempt and last_attempt.completed:
-                    return redirect("quiz_result", attempt_id=last_attempt.id)
-                return HttpResponseForbidden("Exam not available")
-        # create a fresh attempt
-        end_time = timezone.now() + timezone.timedelta(minutes=quiz.duration_minutes)
-        attempt = StudentQuizAttempt.objects.create(
-            student=request.user,
-            quiz=quiz,
-            started_at=timezone.now(),
-            end_time=end_time,
-            completed=False,
-            retake_allowed=False,
-            retake_count=0,
-            score=0.0
-        )
-        # log start
-        ActionLog.objects.create(user=request.user, action_type="Started Exam", model_name="StudentQuizAttempt", object_id=str(attempt.id), details={"quiz": quiz.title})
+#     # find existing attempt
+#     attempt = StudentQuizAttempt.objects.filter(
+#         student=request.user, quiz=quiz, is_submitted=False
+#     ).first()
+#     print("DEBUG: Existing attempt:", attempt)
+#     print("DEBUG: Quiz available:", available)
+    
+#     if not attempt:
+#         if not available:
+#             last_attempt = StudentQuizAttempt.objects.filter(
+#                 student=request.user, quiz=quiz
+#             ).order_by("-started_at").first()
+#             allow_ret = getattr(quiz, "allow_retake", False) or (last_attempt and last_attempt.retake_allowed)
+#             if not allow_ret:
+#                 if last_attempt and last_attempt.is_submitted:
+#                     return redirect("quiz_result", attempt_id=last_attempt.id)
+#                 return HttpResponseForbidden("Exam not available")
+#         end_time = timezone.now() + timezone.timedelta(minutes=quiz.duration_minutes)
+#         attempt = StudentQuizAttempt.objects.create(
+#             student=request.user,
+#             quiz=quiz,
+#             started_at=timezone.now(),
+#             end_time=end_time,
+#             is_submitted=False,
+#         )
+#         ActionLog.objects.create(
+#             user=request.user,
+#             action_type="Started Exam",
+#             model_name="StudentQuizAttempt",
+#             object_id=str(attempt.id),
+#             details={"quiz": quiz.title},
+#         )
 
-    # Prefetch questions and choices
-    questions = list(quiz.questions.prefetch_related("choices").all())
+#     questions = list(quiz.questions.prefetch_related("choices").all())
+#    
 
-    context = {
-        "quiz": quiz,
-        "attempt": attempt,
-        "questions": questions,
-    }
-    return render(request, "exams/take_quiz.html", context)
+#     return render(request, "exams/take_quiz.html", {
+#         "quiz": quiz,
+#         "attempt": attempt,
+#         "questions": questions,
+#     })
 
-
-@login_required
-@require_POST
-def submit_attempt_view(request, attempt_id):
-    """
-    Final submission view (POST). This computes objective auto-grading
-    (objective answers should have been saved via autosave but double-check),
-    calculates attempt.score, marks attempt.completed and sets completed_at.
-    Returns JSON (AJAX) or redirects.
-    """
-    attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id, student=request.user)
-
-    if attempt.completed:
-        return JsonResponse({"ok": False, "error": "Attempt already submitted"}, status=400)
-
-    # prevent if time expired - if expired we still allow submission but it's up to policy
-    if attempt.end_time and timezone.now() > attempt.end_time:
-        # you may decide to allow late submission; here we'll mark as completed but note expired
-        pass
-
-    # compute total from Answer rows
-    answers_qs = Answer.objects.filter(attempt=attempt).select_related("question", "selected_choice")
-
-    total = 0.0
-    total_marks_possible = 0.0
-    for ans in answers_qs:
-        q = ans.question
-        total_marks_possible += q.marks or 0
-        # For objectives: if obtained_marks already set (autosave), keep it; else evaluate
-        if q.question_type == "objective":
-            # if selected_choice relates and choice.is_correct -> award marks
-            if ans.selected_choice and getattr(ans.selected_choice, "is_correct", False):
-                ans.obtained_marks = float(q.marks)
-            else:
-                ans.obtained_marks = 0.0
-            ans.is_pending = False
-            ans.save(update_fields=["obtained_marks", "is_pending"])
-            total += float(ans.obtained_marks or 0.0)
-        else:
-            # subjective: if teacher has graded (obtained_marks > 0 and not pending) include; otherwise pending -> 0 for now
-            if not ans.is_pending and ans.obtained_marks is not None:
-                total += float(ans.obtained_marks or 0.0)
-            # else keep pending, don't add
-
-    attempt.score = total
-    attempt.completed = True
-    # set completed_at if you have such field in some versions; check attribute
-    if hasattr(attempt, "completed_at"):
-        attempt.completed_at = timezone.now()
-    attempt.save()
-
-    # Log submission
-    ActionLog.objects.create(user=request.user, action_type="Submitted Exam", model_name="StudentQuizAttempt", object_id=str(attempt.id), details={"score": attempt.score})
-
-    # Build result summary to return
-    return JsonResponse({"ok": True, "score": float(attempt.score)})
-
-
-@login_required
-@require_http_methods(["GET"])
-def quiz_result_view(request, attempt_id):
-    """
-    Show detailed results (per-question) and per-question Chart breakdown.
-    """
-    attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id)
-    # only allow owner or teacher/admin to view
-    if request.user != attempt.student and request.user.role not in ("teacher", "admin", "superadmin"):
-        return HttpResponseForbidden()
-
-    # use Answers to compute per-question status
-    answers = Answer.objects.filter(attempt=attempt).select_related("question", "selected_choice", "graded_by")
-    question_rows = []
-    correct_count = 0
-    total_possible = 0.0
-
-    for ans in answers:
-        q = ans.question
-        total_possible += q.marks or 0
-        # determine correctness for objective
-        if q.question_type == "objective":
-            correct = bool(ans.selected_choice and getattr(ans.selected_choice, "is_correct", False))
-            if correct:
-                correct_count += 1
-            student_answer = ans.selected_choice.text if ans.selected_choice else ""
-            correct_answer = ", ".join([c.text for c in q.choices.filter(is_correct=True)])
-            status = "correct" if correct else "wrong"
-            marks_awarded = ans.obtained_marks or 0.0
-        else:
-            # subjective
-            student_answer = ans.text_answer or ""
-            correct_answer = ""  # subjective no single correct
-            status = "graded" if (not ans.is_pending) else "pending"
-            marks_awarded = ans.obtained_marks if (ans.obtained_marks is not None) else None
-
-        question_rows.append({
-            "question_id": q.id,
-            "text": q.text,
-            "type": q.question_type,
-            "student_answer": student_answer,
-            "correct_answer": correct_answer,
-            "status": status,
-            "marks_awarded": marks_awarded,
-            "max_marks": q.marks
-        })
-
-    # chart data: per question mark fraction (0..1) for displayed questions
-    chart_labels = [f"Q{qr['question_id']}" for qr in question_rows]
-    chart_values = []
-    for qr in question_rows:
-        if qr["type"] == "objective":
-            chart_values.append(float(qr["marks_awarded"] or 0) / (qr["max_marks"] or 1))
-        else:
-            if qr["marks_awarded"] is None:
-                chart_values.append(None)  # pending -> display differently
-            else:
-                chart_values.append(float(qr["marks_awarded"]) / (qr["max_marks"] or 1))
-
-    context = {
-        "attempt": attempt,
-        "question_rows": question_rows,
-        "chart_labels": chart_labels,
-        "chart_values": chart_values,
-        "correct_count": correct_count,
-        "total_questions": len(question_rows),
-        "total_score": attempt.score,
-    }
-    return render(request, "exams/quiz_result.html", context)
-
-
-@login_required
-@require_http_methods(["GET"])
-def review_attempt_view(request, attempt_id):
-    """
-    Review page where student can see each question, their answer, correct answer, plus teacher feedback.
-    """
-    attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id)
-    if request.user != attempt.student and request.user.role not in ("teacher", "admin", "superadmin"):
-        return HttpResponseForbidden()
-
-    answers = Answer.objects.filter(attempt=attempt).select_related("question", "selected_choice", "graded_by")
-    print(answers)
-    context = {"attempt": attempt, "answers": answers}
-    return render(request, "exams/quiz_review.html", context)
-
-
-@login_required
-@require_POST
-def request_retake_view(request, quiz_id):
-    """
-    Student requests a retake — creates a Notification to the quiz creator (teacher) and logs action.
-    """
-    quiz = get_object_or_404(Quiz, id=quiz_id)
-    # recipient is the teacher (quiz.created_by) and admin could also be notified
-    recipient = quiz.created_by
-    Notification.objects.create(sender=request.user, recipient=recipient, message=f"Retake request: {request.user.username} requests retake for {quiz.title}", role="teacher", is_broadcast=False)
-    # log
-    ActionLog.objects.create(user=request.user, action_type="Retake Request", model_name="Quiz", object_id=str(quiz.id), details={"student": request.user.username})
-    return JsonResponse({"ok": True, "message": "Retake request sent to teacher."})
-
-
-
-@login_required
-@require_POST
-def api_submit_answer(request, attempt_id):
-    """
-    Autosave individual answers while quiz is ongoing.
-    """
-    attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id, student=request.user)
-
-    if attempt.completed or timezone.now() >= attempt.end_time:
-        return JsonResponse({"status": "error", "msg": "Attempt closed"}, status=400)
-
-    qid = request.POST.get("question_id")
-    ans = request.POST.get("answer")
-
-    try:
-        question = Question.objects.get(id=qid, quiz=attempt.quiz)
-    except Question.DoesNotExist:
-        return JsonResponse({"status": "error", "msg": "Invalid question"}, status=404)
-
-    # Save or update answer
-    Answer.objects.update_or_create(
-        attempt=attempt,
-        question=question,
-        defaults={"answer_text": ans}
-    )
-
-    # Log action
-    ActionLog.objects.create(
-        user=request.user,
-        action_type="submit_answer",
-        details={"attempt_id": attempt.id, "question_id": qid, "answer": ans}
-    )
-
-    return JsonResponse({"status": "ok", "msg": "Answer saved"})
-
-
-@login_required
-@require_POST
-def api_submit_attempt(request, attempt_id):
-    """
-    Final submission of a quiz attempt (manual or autosubmit).
-    """
-    attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id, student=request.user)
-
-    if attempt.completed:
-        return JsonResponse({"status": "error", "msg": "Already submitted"}, status=400)
-
-    # If time expired, force submission
-    now = timezone.now()
-    if now >= attempt.end_time:
-        attempt.completed = True
-    else:
-        attempt.completed = True  # Manual submit before expiry
-
-    attempt.submitted_at = now
-    attempt.save()
-
-    # ✅ Autograde objective questions
-    total = 0
-    correct = 0
-    answers = Answer.objects.filter(attempt=attempt).select_related("question")
-    for ans in answers:
-        total += 1
-        if ans.question.correct_answer and ans.answer_text.strip().lower() == ans.question.correct_answer.strip().lower():
-            correct += 1
-
-    score = round((correct / total) * 100, 2) if total > 0 else 0
-    attempt.score = score
-    attempt.save()
-
-    # Log action
-    ActionLog.objects.create(
-        user=request.user,
-        action_type="submit_exam",
-        details={"attempt_id": attempt.id, "score": score}
-    )
-
-    return JsonResponse({
-        "status": "ok",
-        "msg": "Attempt submitted",
-        "score": score,
-        "total": total,
-        "correct": correct,
-    })
-
-
-
-@login_required
-@user_passes_test(is_teacher_or_admin)
-def quiz_json1(request, quiz_id):
-    quiz = get_object_or_404(Quiz, id=quiz_id)
-
-    # permission: only creator or admin/superadmin can fetch edit JSON
-    if request.user != quiz.created_by and request.user.role not in ('admin','superadmin'):
-        return JsonResponse({"ok": False, "error": "Permission denied"}, status=403)
-
-    quiz_data = {
-        "id": quiz.id,
-        "title": quiz.title,
-        "subject_id": quiz.subject.id if quiz.subject else None,
-        "subject_name": quiz.subject.name if quiz.subject else None,
-        "start_time": quiz.start_time.strftime("%Y-%m-%d %H:%M") if quiz.start_time else None,
-        "end_time": quiz.end_time.strftime("%Y-%m-%d %H:%M") if quiz.end_time else None,
-        "duration_minutes": quiz.duration_minutes,
-        "is_published": quiz.is_published,
-        "questions": []
-    }
-    for q in quiz.questions.all():
-        qdata = {
-            "id": q.id,
-            "text": q.text,
-            "question_type": q.question_type,
-            "marks": q.marks,
-            "choices": []
-        }
-        if q.question_type == "objective":
-            qdata["choices"] = [
-                {"id": c.id, "text": c.text, "is_correct": c.is_correct}
-                for c in q.choices.all()
-            ]
-        quiz_data["questions"].append(qdata)
-        print(quiz_data)
-
-    return JsonResponse({"ok": True, "quiz": quiz_data})
-
-
-def quiz_json2(request, quiz_id):
-    quiz = get_object_or_404(Quiz, pk=quiz_id)
-
-    quiz_data = {
-        "id": quiz.id,
-        "title": quiz.title,
-        "class": quiz.class_fk.name if hasattr(quiz, "class_fk") else None,
-        "created_by": quiz.created_by.username if quiz.created_by else None,
-        "questions": []
-    }
-
-    for q in quiz.questions.all():
-        quiz_data["questions"].append({
-            "id": q.id,
-            "text": q.text,
-            "type": q.question_type,
-            "choices": [
-                {"id": c.id, "text": c.text, "is_correct": c.is_correct}
-                for c in q.choices.all()
-            ]
-        })
-
-    return JsonResponse(quiz_data, safe=False)
 
 
 
@@ -2784,6 +2282,7 @@ def quiz_json3(request, attempt_id):
     Return quiz questions + answers as JSON for a student's attempt.
     Supports resume if attempt not submitted.
     """
+
     attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id, student=request.user)
 
     # Check expiry
@@ -2791,7 +2290,7 @@ def quiz_json3(request, attempt_id):
         return JsonResponse({"error": "Exam time expired."}, status=403)
 
     # Check submission
-    if attempt.completed:
+    if attempt.is_submitted:
         return JsonResponse({"error": "Exam already submitted."}, status=403)
     quiz = attempt.quiz
     questions = quiz.questions.prefetch_related("choice_set")
@@ -2820,6 +2319,101 @@ def quiz_json3(request, attempt_id):
         },
         "questions": data,
     })
+
+
+
+
+@login_required
+def quiz_json1(request, quiz_id):
+    quiz = get_object_or_404(Quiz.objects.prefetch_related("choices"), id=quiz_id)
+
+    data = {
+        "quiz": {
+            "id": quiz.id,
+            "title": quiz.title,
+            "end_time": quiz.end_time.isoformat() if quiz.end_time else None,
+            "questions": []
+        }
+    }
+
+    for q in quiz.questions.all():
+        data["quiz"]["questions"].append({
+            "id": q.id,
+            "text": q.text,
+            "question_type": q.question_type,
+            "marks": q.marks,
+            "choices": [
+                {"id": c.id, "text": c.text} for c in q.choices.all()
+            ]
+        })
+
+    return JsonResponse(data)
+
+
+@login_required
+
+def quiz_json_quiz_load(request, quiz_id):
+    quiz = get_object_or_404(Quiz, id=quiz_id)
+
+    # permission: only creator or admin/superadmin can fetch edit JSON
+    if request.user != quiz.created_by and request.user.role not in ('admin','superadmin'):
+        return JsonResponse({"ok": False, "error": "Permission denied"}, status=403)
+
+    quiz_data = {
+        "id": quiz.id,
+        "title": quiz.title,
+        "subject_id": quiz.subject.id if quiz.subject else None,
+        "subject_name": quiz.subject.name if quiz.subject else None,
+        "start_time": quiz.start_time.strftime("%Y-%m-%d %H:%M") if quiz.start_time else None,
+        "end_time": quiz.end_time.strftime("%Y-%m-%d %H:%M") if quiz.end_time else None,
+        "duration_minutes": quiz.duration_minutes,
+        "is_published": quiz.is_published,
+        "questions": []
+    }
+    for q in quiz.questions.all():
+        qdata = {
+            "id": q.id,
+            "text": q.text,
+            "question_type": q.question_type,
+            "marks": q.marks,
+            "choices": []  
+        }
+        if q.question_type == "objective":
+            qdata["choices"] = [
+                {"id": c.id, "text": c.text, "is_correct": c.is_correct}
+                for c in q.choices.all()
+            ]
+        quiz_data["questions"].append(qdata)
+        print(quiz_data)
+
+    return JsonResponse({"ok": True, "quiz": quiz_data})
+
+
+
+# def quiz_json2(request, quiz_id):
+#     quiz = get_object_or_404(Quiz, pk=quiz_id)
+
+#     quiz_data = {
+#         "id": quiz.id,
+#         "title": quiz.title,
+#         "class": quiz.class_fk.name if hasattr(quiz, "class_fk") else None,
+#         "created_by": quiz.created_by.username if quiz.created_by else None,
+#         "questions": []
+#     }
+
+#     for q in quiz.questions.all():
+#         quiz_data["questions"].append({
+#             "id": q.id,
+#             "text": q.text,
+#             "type": q.question_type,
+#             "choices": [
+#                 {"id": c.id, "text": c.text, "is_correct": c.is_correct}
+#                 for c in q.choices.all()
+#             ]
+#         })
+
+#     return JsonResponse(quiz_data, safe=False)
+
 
 
 
@@ -2885,7 +2479,7 @@ def approve_retake(request, attempt_id):
     attempt.end_time = None
     attempt.save()
 
-    # Notify student
+    # Notify studenl
     Notification.objects.create(
         recipient=attempt.student,
         message=f"✅ Your retake request for Exam '{attempt.quiz.title}' has been approved.",
@@ -2907,149 +2501,418 @@ def approve_retake(request, attempt_id):
 ##------------New Student Exam take/Retake/ etc Page ------------------###
 
 
+
+# helper: check student
+def is_student(user):
+    return user.is_authenticated and getattr(user, "role", None) == "student"
+
+def is_teacher_or_admin(user):
+    return user.is_authenticated and getattr(user, "role", None) in ("teacher", "admin", "superadmin")
+
+
 @login_required
-def take_quiz(request, attempt_id):
-    """Render the quiz-taking page for the student."""
-    attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id, student=request.user)
-    quiz = attempt.quiz
+def take_quiz_view(request, quiz_id):
+    """
+    Show the take-quiz page. Create or resume attempt server-side.
+    """
+    if not is_student(request.user):
+        return HttpResponseForbidden("forbidden")
+
+    quiz = get_object_or_404(Quiz, id=quiz_id)
+
+    now = timezone.now()
+    # allowed to start/resume if published OR retake allowed by admin/teacher, etc.
+    # find existing active attempt
+    attempt = StudentQuizAttempt.objects.filter(student=request.user, quiz=quiz, is_submitted=False).order_by("-started_at").first()
+
+    if attempt:
+        # if expired, do not resume (unless retake_allowed)
+        if attempt.end_time and now > attempt.end_time and not attempt.retake_allowed:
+            attempt = None
+
+    if not attempt:
+        # not resuming: check whether quiz open or retake allowed
+        available = quiz.is_published and (quiz.start_time <= now <= quiz.end_time)
+        last_attempt = StudentQuizAttempt.objects.filter(student=request.user, quiz=quiz).order_by("-started_at").first()
+        allow_ret = quiz.allow_retake or (last_attempt and last_attempt.retake_allowed)
+        if not available and not allow_ret:
+            # if closed and not allowed: if there is a is_submitted attempt, redirect to its result
+            if last_attempt and last_attempt.is_submitted:
+                return redirect('quiz_result', attempt_id=last_attempt.id)
+            return redirect('quiz_closed_detail', quiz_id=quiz.id)
+
+        # create new attempt
+        end_time = now + timezone.timedelta(minutes=quiz.duration_minutes)
+        attempt = StudentQuizAttempt.objects.create(
+            student=request.user,
+            quiz=quiz,
+            started_at=now,
+            end_time=end_time,
+            is_submitted=False,
+            retake_allowed=False,
+            retake_count=(last_attempt.retake_count+1 if last_attempt else 0),
+            score=0.0
+        )
+        ActionLog.objects.create(user=request.user, action_type="Started Exam", description=f"Started exam {quiz.title}", model_name="StudentQuizAttempt", object_id=str(attempt.id), details={"quiz": quiz.title})
+
+    # ensure questions are prefetched for template rendering
     questions = quiz.questions.prefetch_related("choices").all()
 
-    return render(request, "take_quiz.html", {
+    # also pass existing saved answers to prefill (dict question_id -> answer)
+    saved_answers = {}
+    for ans in Answer.objects.filter(attempt=attempt).select_related("selected_choice", "question"):
+        if ans.question.question_type == "objective" and ans.selected_choice:
+            saved_answers[str(ans.question.id)] = {"choice_id": ans.selected_choice.id}
+        else:
+            saved_answers[str(ans.question.id)] = {"text": ans.text_answer}
+
+    context = {
         "quiz": quiz,
         "attempt": attempt,
         "questions": questions,
-    })
-
-
-@login_required
-def quiz_json(request, quiz_id):
-    """Return quiz JSON with or without an existing attempt (for resume)."""
-    quiz = get_object_or_404(Quiz, id=quiz_id)
-
-    # Get or create active attempt
-    attempt, created = StudentQuizAttempt.objects.get_or_create(
-        student=request.user,
-        quiz=quiz,
-        completed=False,
-        defaults={"end_time": timezone.now() + timezone.timedelta(minutes=quiz.duration_minutes)}
-    )
-
-    data = {
-        "ok": True,
-        "quiz": {
-            "id": quiz.id,
-            "title": quiz.title,
-            "duration": quiz.duration_minutes,
-            "end_time": attempt.end_time.isoformat() if attempt.end_time else None,
-            "questions": [
-                {
-                    "id": q.id,
-                    "text": q.text,
-                    "marks": q.marks,
-                    "question_type": q.question_type,
-                    "choices": [{"id": c.id, "text": c.text} for c in q.choices.all()]
-                } for q in quiz.questions.all()
-            ]
-        }
+        "saved_answers": saved_answers,
     }
-    return JsonResponse(data)
+    return render(request, "exams/take_quiz.html", context)
 
 
-@csrf_exempt
 @login_required
+@require_POST
 def api_submit_answer(request, attempt_id):
-    """Save an answer (autosave) during quiz taking."""
-    if request.method != "POST":
-        return JsonResponse({"ok": False, "error": "Invalid method"}, status=405)
-
+    """
+    Autosave single answer (AJAX). Accepts JSON: {question_id, answer}
+    - For objective: answer is choice id (int)
+    - For subjective: answer is text
+    Autograde objectives here.
+    """
     attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id, student=request.user)
-    if attempt.completed:
+    if attempt.is_submitted:
         return JsonResponse({"ok": False, "error": "Attempt already submitted"}, status=400)
+    if attempt.end_time and timezone.now() > attempt.end_time:
+        return JsonResponse({"ok": False, "error": "Attempt time expired"}, status=400)
 
     try:
-        data = json.loads(request.body.decode("utf-8"))
+        payload = json.loads(request.body.decode())
     except Exception:
-        return JsonResponse({"ok": False, "error": "Invalid JSON"}, status=400)
+        return JsonResponse({"ok": False, "error": "invalid json"}, status=400)
 
-    qid = data.get("question_id")
-    qtype = data.get("type")
-    ans_val = data.get("answer")
+    qid = payload.get("question_id")
+    answer = payload.get("answer", None)  # can be choice id or text
+
+    if not qid:
+        return JsonResponse({"ok": False, "error": "question_id required"}, status=400)
 
     question = get_object_or_404(Question, id=qid, quiz=attempt.quiz)
-    ans, _ = Answer.objects.get_or_create(attempt=attempt, question=question)
 
-    if qtype == "objective":
+    # objective
+    if question.question_type == "objective":
+        # answer should be a choice id (int or str)
         try:
-            choice = Choice.objects.get(id=ans_val, question=question)
-            ans.selected_choice = choice
-            ans.is_pending = False
-            ans.obtained_marks = question.marks if choice.is_correct else 0
-        except Choice.DoesNotExist:
-            return JsonResponse({"ok": False, "error": "Invalid choice"}, status=400)
-    else:
-        ans.text_answer = ans_val
-        ans.is_pending = True  # subjective needs grading
+            choice = Choice.objects.get(id=int(answer), question=question)
+        except Exception:
+            choice = None
 
-    ans.save()
+        if choice:
+            obtained = float(question.marks) if choice.is_correct else 0.0
+            ans_obj, created = Answer.objects.update_or_create(
+                attempt=attempt, question=question,
+                defaults={
+                    "selected_choice": choice,
+                    "text_answer": None,
+                    "obtained_marks": obtained,
+                    "is_pending": False,
+                }
+            )
+        else:
+            # clear selection
+            ans_obj, created = Answer.objects.update_or_create(
+                attempt=attempt, question=question,
+                defaults={
+                    "selected_choice": None,
+                    "text_answer": None,
+                    "obtained_marks": 0.0,
+                    "is_pending": False,
+                }
+            )
+    else:
+        # subjective: save text, mark is_pending True, obtained_marks left as 0 (teacher will grade later)
+        text = str(answer or "")
+        ans_obj, created = Answer.objects.update_or_create(
+            attempt=attempt, question=question,
+            defaults={
+                "selected_choice": None,
+                "text_answer": text,
+                "obtained_marks": 0.0,
+                "is_pending": True,
+            }
+        )
+
+    ActionLog.objects.create(user=request.user, action_type="submit_answer", description="Autosaved answer", model_name="Answer", object_id=str(ans_obj.id), details={"question": question.id})
     return JsonResponse({"ok": True})
 
 
-@csrf_exempt
 @login_required
+@require_POST
 def api_submit_attempt(request, attempt_id):
-    """Finalize the attempt (auto-submit or finish)."""
-    if request.method != "POST":
-        return JsonResponse({"ok": False, "error": "Invalid method"}, status=405)
-
+    """
+    Final submission: autograde objective parts (again to be safe), sum objective + graded subjective.
+    Returns JSON with overall score and per-question details.
+    """
     attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id, student=request.user)
-    if attempt.completed:
+
+    if attempt.is_submitted:
         return JsonResponse({"ok": False, "error": "Already submitted"}, status=400)
 
-    # finalize
-    attempt.completed = True
-    attempt.completed_at = timezone.now()
-    attempt.score = Answer.total_score(attempt)
-    attempt.save()
+    # re-evaluate objective answers and ensure answers exist for all objective questions
+    answers_qs = Answer.objects.filter(attempt=attempt).select_related("question", "selected_choice")
+    # Ensure every objective question has an Answer row (create with 0 if missing)
+    for q in attempt.quiz.questions.filter(question_type="objective"):
+        ans, created = Answer.objects.get_or_create(attempt=attempt, question=q, defaults={
+            "selected_choice": None, "text_answer": None, "obtained_marks": 0.0, "is_pending": False
+        })
 
-    ActionLog.objects.create(
-        user=request.user,
-        action_type="review",
-        description=f"Submitted quiz {attempt.quiz.title}",
-        model_name="StudentQuizAttempt",
-        object_id=str(attempt.id),
-        details={"score": attempt.score}
-    )
+    # Auto-grade objective answers
+    total_score = 0.0
+    for ans in Answer.objects.filter(attempt=attempt).select_related("question", "selected_choice"):
+        q = ans.question
+        if q.question_type == "objective":
+            if ans.selected_choice and getattr(ans.selected_choice, "is_correct", False):
+                ans.obtained_marks = float(q.marks)
+            else:
+                ans.obtained_marks = 0.0
+            ans.is_pending = False
+            ans.save(update_fields=["obtained_marks", "is_pending"])
+        # subjective answers left as is (pending until graded)
 
-    return JsonResponse({"ok": True, "redirect_url": f"/exams/attempt/{attempt.id}/result/"})
+    # calculate totals using Answer helper methods
+    objective_sum = Answer.objective_score(attempt)
+    subjective_sum = Answer.subjective_score(attempt)  # only graded subjective answers contribute
+    total_score = float(objective_sum) + float(subjective_sum)
+
+    attempt.score = total_score
+    attempt.is_submitted = True
+    attempt.submitted_at = timezone.now() if hasattr(attempt, "submitted_at") else timezone.now()
+    attempt.save(update_fields=["score", "is_submitted", "submitted_at"])
+
+    ActionLog.objects.create(user=request.user, action_type="Submitted Exam", description=f"Submitted attempt {attempt.id}", model_name="StudentQuizAttempt", object_id=str(attempt.id), details={"score": attempt.score})
+
+    # Build a summary payload
+    question_details = []
+    for ans in Answer.objects.filter(attempt=attempt).select_related("question", "selected_choice"):
+        q = ans.question
+        if q.question_type == "objective":
+            student_ans = ans.selected_choice.text if ans.selected_choice else None
+            correct = bool(ans.selected_choice and getattr(ans.selected_choice, "is_correct", False))
+            correct_ans_text = ", ".join([c.text for c in q.choices.filter(is_correct=True)])
+            question_details.append({
+                "question_id": q.id,
+                "type": "objective",
+                "text": q.text,
+                "student": student_ans,
+                "correct_answer": correct_ans_text,
+                "marks_awarded": ans.obtained_marks,
+                "max_marks": q.marks,
+                "status": "correct" if correct else "wrong",
+            })
+        else:
+            question_details.append({
+                "question_id": q.id,
+                "type": "subjective",
+                "text": q.text,
+                "student": ans.text_answer,
+                "marks_awarded": ans.obtained_marks if not ans.is_pending else None,
+                "max_marks": q.marks,
+                "status": "pending" if ans.is_pending else "graded",
+                "feedback": ans.feedback,
+            })
+
+    return JsonResponse({
+        "ok": True,
+        "score": total_score,
+        "objective_sum": float(objective_sum),
+        "subjective_sum": float(subjective_sum),
+        "questions": question_details,
+    })
 
 
 @login_required
-def quiz_result(request, attempt_id):
-    """Show result of a completed attempt with breakdown."""
-    attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id, student=request.user)
-    answers = Answer.objects.filter(attempt=attempt).select_related("question", "selected_choice")
+def quiz_result_view(request, attempt_id):
+    """
+    Render result page with per-question breakdown and Chart.js bar for objective correctness.
+    """
+    attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id)
+    # allow only owner or teacher/admin
+    if request.user != attempt.student and not is_teacher_or_admin(request.user):
+        return HttpResponseForbidden("forbidden")
 
-    per_question = []
-    for a in answers:
-        if a.question.question_type == "objective":
-            per_question.append({
-                "question": a.question.text,
-                "your_answer": a.selected_choice.text if a.selected_choice else "—",
-                "correct": a.selected_choice.is_correct if a.selected_choice else False,
-                "marks": a.obtained_marks,
-                "max_marks": a.question.marks,
+    answers = Answer.objects.filter(attempt=attempt).select_related("question", "selected_choice", "graded_by")
+    qrows = []
+    correct_count = 0
+    for ans in answers:
+        q = ans.question
+        if q.question_type == "objective":
+            correct = bool(ans.selected_choice and getattr(ans.selected_choice, "is_correct", False))
+            if correct:
+                correct_count += 1
+            correct_text = ", ".join([c.text for c in q.choices.filter(is_correct=True)])
+            student_text = ans.selected_choice.text if ans.selected_choice else (ans.text_answer or "")
+            qrows.append({
+                "id": q.id,
+                "text": q.text,
+                "type": "objective",
+                "student_answer": student_text,
+                "correct_answer": correct_text,
+                "marks_awarded": ans.obtained_marks,
+                "max_marks": q.marks,
+                "status": "correct" if correct else "wrong",
             })
         else:
-            per_question.append({
-                "question": a.question.text,
-                "your_answer": a.text_answer or "—",
-                "correct": None,
-                "marks": a.obtained_marks,
-                "max_marks": a.question.marks,
+            qrows.append({
+                "id": q.id,
+                "text": q.text,
+                "type": "subjective",
+                "student_answer": ans.text_answer,
+                "marks_awarded": (ans.obtained_marks if not ans.is_pending else None),
+                "max_marks": q.marks,
+                "status": "pending" if ans.is_pending else "graded",
+                "feedback": ans.feedback,
             })
 
-    return render(request, "quiz_result.html", {
+    # chart data for objective questions: percent correct per question (0 or 1)
+    chart_labels = []
+    chart_values = []
+    for row in qrows:
+        chart_labels.append(f"Q{row['id']}")
+        if row['type'] == 'objective':
+            chart_values.append((row['marks_awarded'] or 0) / (row['max_marks'] or 1) * 100)
+        else:
+            chart_values.append(None)  # will show as gap
+
+    context = {
         "attempt": attempt,
-        "answers": per_question,
+        "qrows": qrows,
+        "chart_labels": chart_labels,
+        "chart_values": chart_values,
         "total_score": attempt.score,
-    })
+        "correct_count": correct_count,
+        "total_questions": len(qrows),
+    }
+    return render(request, "exams/quiz_result.html", context)
+
+
+@login_required
+def review_attempt_view(request, attempt_id):
+    """
+    Review answers + teacher feedback. Owner or teacher/admin only.
+    """
+    attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id)
+    if request.user != attempt.student and not is_teacher_or_admin(request.user):
+        return HttpResponseForbidden("forbidden")
+
+    answers = Answer.objects.filter(attempt=attempt).select_related("question", "selected_choice", "graded_by")
+    return render(request, "exams/quiz_review.html", {"attempt": attempt, "answers": answers})
+
+
+
+@login_required
+@require_POST
+def request_retake_view(request, quiz_id):
+    """
+    Student requests retake: creates RetakeRequest and notifies teacher + admins.
+    """
+    if not is_student(request.user):
+        return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
+
+    quiz = get_object_or_404(Quiz, id=quiz_id)
+
+    # Get reason (from JSON body or POST)
+    reason = ""
+    try:
+        payload = json.loads(request.body.decode())
+        reason = payload.get("reason", "")[:1000]
+    except Exception:
+        reason = request.POST.get("reason", "")[:1000]
+
+    # Create RetakeRequest
+    rr = RetakeRequest.objects.create(
+        student=request.user,
+        quiz=quiz,
+        reason=reason,
+        status="pending"
+    )
+
+    # Notify teacher
+    Notification.objects.create(
+        sender=request.user,
+        recipient=quiz.created_by,
+        message=f"Retake request by {request.user.get_full_name()} for {quiz.title}: {reason}",
+        role="teacher",
+        is_broadcast=False,
+    )
+
+    # Notify admins
+    admins = User.objects.filter(role__in=("admin", "superadmin"), approved=True)
+    for a in admins:
+        Notification.objects.create(
+            sender=request.user,
+            recipient=a,
+            message=f"Retake request by {request.user.get_full_name()} for {quiz.title}",
+            role="admin",
+            is_broadcast=False,
+        )
+
+    # Log action
+    ActionLog.objects.create(
+        user=request.user,
+        action_type="retake_request",
+        description="Requested retake",
+        model_name="RetakeRequest",
+        object_id=str(rr.id),
+        details={"quiz": quiz.title},
+    )
+
+    return JsonResponse({"ok": True, "message": "Retake request sent."})
+
+
+@login_required
+@require_POST
+def approve_request_retake_view(request, req_id):
+    """
+    Teacher/admin approves a retake request. This sets the last attempt.retake_allowed True (or creates one)
+    and notifies the student.
+    """
+    if not is_teacher_or_admin(request.user):
+        return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
+
+    rr = get_object_or_404(RetakeRequest, id=req_id)
+    if rr.status == "approved":
+        return JsonResponse({"ok": False, "error": "Already approved"}, status=400)
+
+    rr.status = "approved"
+    rr.reviewed_at = timezone.now()
+    rr.reviewed_by = request.user
+    rr.save(update_fields=["status", "reviewed_at", "reviewed_by"])
+
+    # grant retake: find last attempt and mark retake_allowed True. If none, create a new attempt with retake_allowed True
+    last_attempt = StudentQuizAttempt.objects.filter(student=rr.student, quiz=rr.quiz).order_by("-started_at").first()
+    if last_attempt:
+        last_attempt.retake_allowed = True
+        last_attempt.save(update_fields=["retake_allowed"])
+    else:
+        # create a new empty attempt flagged retake_allowed so student can start
+        new_attempt = StudentQuizAttempt.objects.create(
+            student=rr.student,
+            quiz=rr.quiz,
+            started_at=timezone.now(),
+            end_time=timezone.now() + timezone.timedelta(minutes=rr.quiz.duration_minutes),
+            is_submitted=False,
+            retake_allowed=True,
+            retake_count=0,
+            score=0.0
+        )
+
+    # notify student
+    Notification.objects.create(sender=request.user, recipient=rr.student, message=f"Your retake request for '{rr.quiz.title}' has been approved.", role="student", is_broadcast=False)
+    ActionLog.objects.create(user=request.user, action_type="approved", description="Approved retake", model_name="RetakeRequest", object_id=str(rr.id), details={"student": rr.student.username, "quiz": rr.quiz.title})
+
+    return JsonResponse({"ok": True, "message": "Retake approved and student notified."})
+

@@ -1,7 +1,6 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
-from quizzes.models import Quiz, Question, Choice
-from accounts.models import Class, Subject
+from exams.models import Quiz, Question, Choice, Class, Subject
 import random
 
 User = get_user_model()

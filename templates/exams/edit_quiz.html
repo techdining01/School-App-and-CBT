@@ -74,7 +74,7 @@
   // For brevity in this message, I'll assume you copied the same functions (addQuestionBlock, addChoice, renderQuestionBlockFromData)
   // Now fetch quiz JSON and prefill
   async function fetchQuizAndPrefill() {
-    const res = await fetch("{% url 'quiz_json_1' quiz.id %}");
+    const res = await fetch("{% url 'quiz_json' quiz.id %}");
     const data = await res.json();
     if (!data.ok) { alert(data.error || 'Failed to load quiz'); return; }
     const q = data.quiz;

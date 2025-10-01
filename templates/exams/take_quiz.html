@@ -2,97 +2,235 @@
 {% load static %}
 {% block content %}
 <div class="container mt-4">
-  <h2 id="quiz-title">📘 Quiz</h2>
-  <div id="timer" class="alert alert-info">⏳ Time left: <span id="time-left"></span></div>
+  <div class="card shadow-sm">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h4 class="mb-0">{{ quiz.title }}</h4>
+      <div>
+        <small class="text-muted">Time Remaining:</small>
+        <span id="timerBadge" class="badge bg-primary">--:--</span>
+      </div>
+    </div>
 
-  <form id="quiz-form">
-    <div id="quiz-questions"></div>
-    <button type="button" id="submit-btn" class="btn btn-success mt-3">✅ Submit & Finish</button>
-  </form>
+    <div class="card-body">
+      <div id="take-quiz-messages"></div>
 
-  <button id="retake-btn" class="btn btn-warning mt-3" style="display:none;">🔄 Request Retake</button>
-  <a href="{% url 'student_dashboard' %}" class="btn btn-secondary mt-3">⬅ Back to Dashboard</a>
+      <form id="quizForm" onsubmit="return false;">
+        {% csrf_token %}
+        <input type="hidden" id="attemptId" value="{{ attempt.id }}">
+        <input type="hidden" id="quizId" value="{{ quiz.id }}">
+
+        {% for q in questions %}
+          <div class="mb-4 p-3 border rounded">
+            <div class="d-flex justify-content-between">
+              <div>
+                <strong>Q{{ forloop.counter }}.</strong> <span class="fw-semibold">{{ q.text }}</span>
+                <div class="small text-muted">Marks: {{ q.marks }}</div>
+              </div>
+              <div class="text-end small text-muted">{{ q.get_question_type_display }}</div>
+            </div>
+
+            <div class="mt-3 question-area" data-question-id="{{ q.id }}" data-qtype="{{ q.question_type }}">
+              {% if q.question_type == "objective" %}
+                {% for c in q.choices.all %}
+                  <div class="form-check">
+                    <input class="form-check-input answer-input" type="radio"
+                           name="q_{{ q.id }}" value="{{ c.id }}" id="choice_{{ c.id }}"
+                           {% if saved_answers.q.id and saved_answers.q.id.choice_id == c.id %}checked{% endif %}>
+                    <label class="form-check-label" for="choice_{{ c.id }}">{{ c.text }}</label>
+                  </div>
+                {% endfor %}
+              {% else %}
+                <textarea class="form-control answer-input" name="q_{{ q.id }}" rows="4">{% if saved_answers.q.id %}{{ saved_answers.q.id.text }}{% endif %}</textarea>
+              {% endif %}
+            </div>
+
+            <div class="mt-2">
+              <small id="saved-{{ q.id }}" class="text-success" style="display:none;">Saved</small>
+            </div>
+          </div>
+        {% endfor %}
+
+        <div class="d-flex justify-content-between">
+          <button class="btn btn-success" id="submitAttemptBtn">Submit & Finish</button>
+          <div>
+            <button class="btn btn-warning" id="requestRetakeBtn">Request Retake</button>
+            <a href="{% url 'student_dashboard' %}" class="btn btn-secondary">Back to Dashboard</a>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
 </div>
 
-{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-const attemptId = "{{ attempt.id }}";  // from view
-const quizId = "{{ quiz.id }}";
-const quizUrl = "{% url 'quiz_json' quiz.id %}";
-const submitAnswerUrl = "{% url 'api_submit_answer' attempt.id %}";
-const submitAttemptUrl = "{% url 'api_submit_attempt' attempt.id %}";
+(function(){
+  const attemptId = document.getElementById('attemptId').value;
+  const quizId = document.getElementById('quizId').value;
+  const SAVE_URL = "{% url 'api_submit_answer' attempt.id %}".replace("{{ attempt.id }}", attemptId);
+  const SUBMIT_URL = "{% url 'api_submit_attempt' attempt.id %}".replace("{{ attempt.id }}", attemptId);
+  const REQUEST_RETAKE_URL = "{% url 'student_request_retake' quiz.id %}".replace("{{ quiz.id }}", quizId);
+  const CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
 
-let endTime = null;
+  // Timer (server-driven end_time)
+  const serverEnd = "{{ attempt.end_time|date:'c' }}";
+  const timerBadge = document.getElementById('timerBadge');
 
-// Fetch quiz data
-fetch(quizUrl).then(r => r.json()).then(data => {
-  if (!data.ok) { alert("Error loading quiz"); return; }
-
-  const quiz = data.quiz;
-  document.getElementById("quiz-title").innerText = quiz.title;
-
-  endTime = quiz.end_time ? new Date(quiz.end_time) : null;
-  startTimer();
-
-  const container = document.getElementById("quiz-questions");
-  quiz.questions.forEach((q, i) => {
-    let html = `<div class="card mb-3"><div class="card-body"><h5>Q${i+1}. ${q.text}</h5>`;
-    if (q.question_type === "objective") {
-      q.choices.forEach(c => {
-        const checked = (q.saved_answer === c.id) ? "checked" : "";
-        html += `<div><input type="radio" name="q${q.id}" value="${c.id}" ${checked} class="choice-radio"> ${c.text}</div>`;
-      });
-    } else {
-      html += `<textarea name="q${q.id}" class="form-control" rows="3">${q.saved_answer || ""}</textarea>`;
-    }
-    html += `</div></div>`;
-    container.insertAdjacentHTML("beforeend", html);
-  });
-
-  // Auto-save
-  document.querySelectorAll(".choice-radio, textarea").forEach(el => {
-    el.addEventListener("change", e => {
-      const qid = el.name.replace("q","");
-      const val = (el.type === "radio") ? el.value : el.value;
-      fetch(submitAnswerUrl, {
-        method:"POST",
-        headers:{"X-CSRFToken":"{{ csrf_token }}","Content-Type":"application/json"},
-        body: JSON.stringify({question_id: qid, answer: val})
-      });
-    });
-  });
-});
-
-// Timer
-function startTimer() {
-  if (!endTime) return;
-  const interval = setInterval(() => {
-    const now = new Date();
-    const diff = endTime - now;
+  function parseISO(s){
+    if(!s) return null;
+    return new Date(s);
+  }
+  const endTime = parseISO(serverEnd);
+  let timerInterval = null;
+  function updateTimer(){
+    if(!endTime){ timerBadge.innerText = '∞'; return; }
+    const diff = endTime - new Date();
     if (diff <= 0) {
-      clearInterval(interval);
-      document.getElementById("time-left").innerText = "Expired";
-      submitQuiz();
-    } else {
-      const mins = Math.floor(diff/1000/60);
-      const secs = Math.floor((diff/1000)%60);
-      document.getElementById("time-left").innerText = `${mins}m ${secs}s`;
+      timerBadge.innerText = "00:00";
+      clearInterval(timerInterval);
+      autoSubmit();
+      return;
     }
-  }, 1000);
-}
+    const mins = Math.floor(diff/60000);
+    const secs = Math.floor((diff%60000)/1000);
+    timerBadge.innerText = String(mins).padStart(2,"0") + ":" + String(secs).padStart(2,"0");
+  }
+  if (endTime) {
+    updateTimer();
+    timerInterval = setInterval(updateTimer, 1000);
+  } else {
+    timerBadge.innerText = "∞";
+  }
 
-// Submit
-document.getElementById("submit-btn").addEventListener("click", submitQuiz);
-function submitQuiz() {
-  fetch(submitAttemptUrl, {
-    method:"POST", headers:{"X-CSRFToken":"{{ csrf_token }}"}
-  })
-  .then(r=>r.json())
-  .then(data=>{
-    if (data.ok) window.location.href = data.redirect_url;
-    else alert("Error: " + data.error);
+  // helper to show small messages
+  function showMsg(msg, cls='alert-success') {
+    const container = document.getElementById('take-quiz-messages');
+    const d = document.createElement('div');
+    d.className = `alert ${cls} py-1`;
+    d.innerText = msg;
+    container.appendChild(d);
+    setTimeout(()=> d.remove(), 3000);
+  }
+
+  // Debounced autosave per question
+  const saveTimers = {};
+  async function saveAnswer(question_id, value, qtype) {
+    try {
+      const payload = {question_id: question_id, answer: value};
+      const res = await fetch(SAVE_URL, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json', 'X-CSRFToken': CSRF},
+        body: JSON.stringify(payload)
+      });
+      const j = await res.json();
+      if (j.ok) {
+        const mark = document.getElementById('saved-' + question_id);
+        if (mark) { mark.style.display = 'inline'; setTimeout(()=> mark.style.display='none', 1500); }
+      } else {
+        showMsg(j.error || 'Save failed', 'alert-danger');
+      }
+    } catch (err) {
+      console.error('save error', err);
+    }
+  }
+
+  // Attach listeners
+  document.querySelectorAll('.question-area').forEach(div => {
+    const qid = div.dataset.questionId;
+    const qtype = div.dataset.qtype;
+    if (qtype === 'objective') {
+      div.querySelectorAll('input[type="radio"]').forEach(r => {
+        r.addEventListener('change', function(){
+          const val = this.value;
+          if (saveTimers[qid]) clearTimeout(saveTimers[qid]);
+          saveTimers[qid] = setTimeout(()=> saveAnswer(qid, val, qtype), 300);
+        });
+      });
+    } else {
+      const ta = div.querySelector('textarea');
+      if (ta) {
+        ta.addEventListener('input', function(){
+          const val = this.value;
+          if (saveTimers[qid]) clearTimeout(saveTimers[qid]);
+          saveTimers[qid] = setTimeout(()=> saveAnswer(qid, val, qtype), 600);
+        });
+        ta.addEventListener('blur', function(){ saveAnswer(qid, this.value, qtype); });
+      }
+    }
   });
-}
+
+  // Submit attempt (final)
+  document.getElementById('submitAttemptBtn').addEventListener('click', async function(e){
+    e.preventDefault();
+    this.disabled = true;
+    showMsg('Submitting...', 'alert-info');
+    try {
+      const res = await fetch(SUBMIT_URL, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json', 'X-CSRFToken': CSRF},
+        body: JSON.stringify({})
+      });
+      const j = await res.json();
+      if (j.ok) {
+        showMsg('Submitted — score: ' + (j.score ?? j.objective_sum ?? '0'), 'alert-success');
+        // go to result page
+        window.location.href = "{% url 'quiz_result' 0 %}".replace('/0/', '/' + attemptId + '/');
+      } else {
+        showMsg(j.error || 'Submit failed', 'alert-danger');
+        this.disabled = false;
+      }
+    } catch (err) {
+      console.error(err);
+      showMsg('Network error on submit', 'alert-danger');
+      this.disabled = false;
+    }
+  });
+
+  // Auto-submit when timer elapses
+  async function autoSubmit(){
+    try {
+      const res = await fetch(SUBMIT_URL, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-CSRFToken': CSRF},
+        body: JSON.stringify({})
+      });
+      const j = await res.json();
+      if (j.ok) {
+        showMsg('Auto-submitted (time up).', 'alert-warning');
+        setTimeout(()=> window.location.href = "{% url 'quiz_result' 0 %}".replace('/0/', '/' + attemptId + '/'), 1000);
+      } else {
+        showMsg('Auto-submit failed', 'alert-danger');
+      }
+    } catch (err) {
+      console.error(err);
+      showMsg('Network error on auto-submit', 'alert-danger');
+    }
+  }
+
+  // Request retake button - sends JSON with optional reason
+  document.getElementById('requestRetakeBtn').addEventListener('click', async function(e){
+    e.preventDefault();
+    if (!confirm('Request a retake?')) return;
+    try {
+      const res = await fetch(REQUEST_RETAKE_URL, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-CSRFToken': CSRF},
+        body: JSON.stringify({reason: 'Student requested retake via UI.'})
+      });
+      const j = await res.json();
+      if (j.ok) showMsg(j.message, 'alert-success');
+      else showMsg(j.error || 'Retake request failed', 'alert-danger');
+    } catch (err) {
+      console.error(err);
+      showMsg('Network error on retake', 'alert-danger');
+    }
+  });
+
+})();
 </script>
-{% endblock %}
+<style>
+.question-area { margin-top: .5rem; }
+.alert { margin-bottom: .5rem; }
+
+</style>
 {% endblock %}

@@ -21,34 +21,41 @@ class Subject(models.Model):
 
 
 class Quiz(models.Model):
-    title = models.CharField(max_length=200)
-    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name="quizzes")
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="created_quizzes")
-    created_at = models.DateTimeField(default=timezone.now)
-    start_time = models.DateTimeField()
-    end_time = models.DateTimeField()
-    duration_minutes = models.PositiveIntegerField(default=30)  # Timer
+    school_class = models.ForeignKey("Class", on_delete=models.CASCADE, related_name="quizzes")
+    subject = models.ForeignKey("Subject", on_delete=models.CASCADE, related_name="quizzes")
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="quizzes")
+    start_time = models.DateTimeField(null=True, blank=True)
+    end_time = models.DateTimeField(null=True, blank=True)
+    duration_minutes = models.PositiveIntegerField(default=30)  # length of quiz in minutes
+    created_at = models.DateTimeField(auto_now_add=True)
     is_published = models.BooleanField(default=False)
-    allow_retake = models.BooleanField(default=False)  # ✅ new field you asked for
+    allow_retake = models.BooleanField(default=False)  # if true, students can ret
+    max_retake_count = models.PositiveIntegerField(default=0)  # 0 = unlimited if allow_retake is True
 
     def __str__(self):
-        return f"{self.title} - {self.subject}"
+        return f"{self.title} ({self.subject})"
+    
+    def total_marks(self):
+        return sum(q.marks for q in self.questions.all())
 
 
 
 class Question(models.Model):
     QUESTION_TYPES = (
-        ('objective', 'Objective'),
-        ('subjective', 'Subjective'),
+        ("objective", "Objective (single correct)"),
+        ("subjective", "Subjective (free text)"),
     )
 
-    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name="questions")
+    quiz = models.ForeignKey(Quiz, related_name="questions", on_delete=models.CASCADE)
     text = models.TextField()
     question_type = models.CharField(max_length=20, choices=QUESTION_TYPES)
-    marks = models.PositiveIntegerField(default=1)
+    marks = models.IntegerField(default=1)
 
     def __str__(self):
-        return f"{self.text[:50]} ({self.get_question_type_display()})"
+        return f"{self.text[:50]}  ... ({self.get_question_type_display()})"
+
 
 
 class Choice(models.Model):
@@ -65,8 +72,8 @@ class StudentQuizAttempt(models.Model):
     quiz = models.ForeignKey("Quiz", on_delete=models.CASCADE)
     started_at = models.DateTimeField(auto_now_add=True)
     end_time = models.DateTimeField(null=True, blank=True)  # quiz expiry
-    completed = models.BooleanField(default=False)  # submitted or not
-    completed_at = models.DateTimeField(auto_now_add=True)
+    is_submitted = models.BooleanField(default=False)  # submitted or not
+    submitted_at = models.DateTimeField(auto_now_add=True)
     retake_allowed = models.BooleanField(default=False)  # ✅ admin/superadmin override
     retake_count = models.PositiveIntegerField(default=0)  # how many times student retook
     score = models.FloatField(default=0.0)  # total score for the attempt
@@ -75,7 +82,7 @@ class StudentQuizAttempt(models.Model):
 
     def can_resume(self):
         """Allow resume if attempt still within time and not submitted."""
-        return not self.completed and (self.end_time is None or timezone.now() < self.end_time)
+        return not self.is_submitted and (self.end_time is None or timezone.now() < self.end_time)
 
     def can_retake(self):
         """Allow retake if admin has granted it, or quiz allows retakes globally."""

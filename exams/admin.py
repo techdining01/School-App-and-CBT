@@ -32,8 +32,8 @@ admin.site.register(Answer, AnswerAdmin)
 
 @admin.register(StudentQuizAttempt)
 class StudentQuizAttemptAdmin(admin.ModelAdmin):
-    list_display = ("student", "quiz", "completed", "retake_allowed", "retake_count")
-    list_filter = ("completed", "retake_allowed")
+    list_display = ("student", "quiz", "is_submitted", "retake_allowed", "retake_count")
+    list_filter = ("is_submitted", "retake_allowed")
     actions = ["allow_retake"]
 
     def allow_retake(self, request, queryset):

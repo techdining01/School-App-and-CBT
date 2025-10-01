@@ -1,33 +1,41 @@
 {% extends "base.html" %}
-{% load static %}
 {% block content %}
 <div class="container mt-4">
-  <h4>Review — {{ attempt.quiz.title }}</h4>
-  <p class="text-muted">Student: {{ attempt.student.username }} -- {{ attempt.student.get_full_name }}</p>
-
-  {% for ans in answers %}
-    <div class="card mb-2">
-      <div class="card-body">
-        <strong>Q:</strong> {{ ans.question.text }} <br>
-        <strong>Your answer:</strong>
-        {% if ans.question.question_type == "objective" %}
-          {% if ans.selected_choice %}
-            {{ ans.selected_choice.text }}
-              {% else %} 
-                  —-
-              {% endif %}
-        {% else %}
-          <div class="border p-2">{{ ans.text_answer|linebreaks }}</div>
-        {% endif %}
-        <div class="mt-2">
-          <strong>Marks awarded:</strong> {{ ans.obtained_marks|default:"-" }} / {{ ans.question.marks }}
-        </div>
-        {% if ans.feedback %}
-          <div class="mt-2"><strong>Teacher feedback:</strong> <div class="p-2 border bg-light">{{ ans.feedback }}</div></div>
-        {% endif %}
-      </div>
+  
+  <div class="d-flex justify-content-between align-items-center mt-3">
+    <div>
+      <h3>Review — {{ attempt.quiz.title }}</h3>
+    <p>Student: {{ attempt.student.get_full_name|default:attempt.student.username }}</p>
     </div>
-  {% endfor %}
-  <a href="{% url 'student_dashboard' %}" class="btn btn-secondary mt-2">Back to dashboard</a>
+      <nav class="d-flex gap-3">
+        {% comment %} <a class="btn btn-primary btn-sm" style="width: auto; height: 40px;font-size: auto;" href="{% url 'request_retake' %}">Retake Request</a> {% endcomment %}
+        <a class="btn btn-dark" style="width: auto; height: 40px;font-size: auto;" href="{% url 'dashboard' %}">Back</a>
+      </nav>
+    </div>
+  <br>
+
+  <div>
+    {% for ans in answers %}
+      <div class="card mb-2">
+        <div class="card-body">
+          <p><strong>Q:</strong> {{ ans.question.text }}</p>
+          <p><strong>Your answer:</strong>
+            {% if ans.question.question_type == 'objective' %}
+                {% if ans.selected_choice %}
+                  {{ ans.selected_choice.text }}
+                {% else %}
+                    "No answer"
+                {% endif %}
+            {% else %}
+              {{ ans.text_answer|default:"No answer" }}
+            {% endif %}
+          </p>
+          <p><strong>Marks awarded:</strong> {{ ans.obtained_marks }}</p>
+          <p><strong>Feedback:</strong> {{ ans.feedback|default:"-" }}</p>
+          <p><small class="text-muted">Graded by: {{ ans.graded_by }}</small></p>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
 </div>
 {% endblock %}
