@@ -71,13 +71,6 @@
           id="quizzes-area"
           style="min-height: 120px"
         ></div>
-        <a
-          href="#"
-          class="btn btn-warning btn-sm"
-          onclick="return confirm('Are you sure you want to request a retake?');"
-        >
-          🔄 Request Retake
-        </a>
         <div class="card-footer d-flex justify-content-between">
           <button class="btn btn-sm btn-outline-secondary" id="quizzes-prev">
             Prev
@@ -232,8 +225,20 @@ function renderQuizzes(items, meta) {
     const card = document.createElement('div');
     card.className = 'border rounded p-2 mb-2 d-flex justify-content-between align-items-center';
 
+    // 🔹 Retake Status Badge
+    let retakeBadge = '';
+    if (q.retake_status) {
+      if (q.retake_status === 'pending') {
+        retakeBadge = `<span class="badge bg-warning text-dark">Retake Pending</span>`;
+      } else if (q.retake_status === 'approved') {
+        retakeBadge = `<span class="badge bg-success">Retake Approved</span>`;
+      } else if (q.retake_status === 'denied') {
+        retakeBadge = `<span class="badge bg-danger">Retake Denied</span>`;
+      }
+    }
+
     const left = `<div>
-      <strong>${q.title}</strong><br>
+      <strong>${q.title}</strong> ${retakeBadge}<br>
       <small class="text-muted">${q.subject} • ${q.class_name}</small><br>
       <small>${new Date(q.start_time).toLocaleString()} - ${new Date(q.end_time).toLocaleString()}</small>
     </div>`;
@@ -242,7 +247,7 @@ function renderQuizzes(items, meta) {
                      ${q.is_submitted ? 'Resume' : 'Start'}
                    </a>`;
 
-    // Add retake button if retake allowed
+    // 🔹 Retake Request Button
     buttons += `<button class="btn btn-sm btn-warning ms-2 request-retake-btn" 
                    data-quiz="${q.id}">
                    🔄 Request Retake
@@ -271,6 +276,7 @@ function renderQuizzes(items, meta) {
         const j = await res.json();
         if (j.ok) {
           showToast(j.message, 'success');
+          fetchDashboard(); // refresh to update badge
         } else {
           showToast(j.error || 'Could not send request', 'danger');
         }

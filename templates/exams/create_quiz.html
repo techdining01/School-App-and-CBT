@@ -5,7 +5,7 @@
   <div class="d-flex justify-content-between align-items-center mt-3">
     <h2 class='fw-bold mb-3'> Create Exam (Manual or Excel) </h2>
       <nav class="d-flex gap-3">
-        <a class="btn btn-dark" style="width: 50px; height: 30px;font-size: 10px;" href="{% url 'dashboard' %}">Back</a>
+        <a class="btn btn-dark" style="width: 60px; height: 35px;font-size: 14px;" href="{% url 'dashboard' %}">Back</a>
       </nav>
     </div>
   <br>
@@ -189,7 +189,7 @@
         alert('Error: ' + (data.error || 'Failed'));
       } else {
         alert('Quiz created successfully!');
-        window.location.href = "{% url 'manage_quizzes_page' %}";
+        window.location.href = "{% url 'manage_quizzes' %}";
       }
     } catch (err) {
       console.error(err);
@@ -217,7 +217,7 @@
         out.innerHTML = `<div class="alert bg-red-100 p-2">${data.error}</div>`;
       } else {
         out.innerHTML = `<div class="alert bg-green-100 p-2">Imported quiz id ${data.quiz_id}</div>`;
-        setTimeout(()=> window.location.href = "{% url 'manage_quizzes_page' %}", 900);
+        setTimeout(()=> window.location.href = "{% url 'manage_quizzes' %}", 900);
       }
     } catch (err) {
       console.error(err);

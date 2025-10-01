@@ -53,7 +53,6 @@
         <div class="d-flex justify-content-between">
           <button class="btn btn-success" id="submitAttemptBtn">Submit & Finish</button>
           <div>
-            <button class="btn btn-warning" id="requestRetakeBtn">Request Retake</button>
             <a href="{% url 'student_dashboard' %}" class="btn btn-secondary">Back to Dashboard</a>
           </div>
         </div>
@@ -69,7 +68,6 @@
   const quizId = document.getElementById('quizId').value;
   const SAVE_URL = "{% url 'api_submit_answer' attempt.id %}".replace("{{ attempt.id }}", attemptId);
   const SUBMIT_URL = "{% url 'api_submit_attempt' attempt.id %}".replace("{{ attempt.id }}", attemptId);
-  const REQUEST_RETAKE_URL = "{% url 'student_request_retake' quiz.id %}".replace("{{ quiz.id }}", quizId);
   const CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
 
   // Timer (server-driven end_time)
@@ -208,24 +206,7 @@
   }
 
   // Request retake button - sends JSON with optional reason
-  document.getElementById('requestRetakeBtn').addEventListener('click', async function(e){
-    e.preventDefault();
-    if (!confirm('Request a retake?')) return;
-    try {
-      const res = await fetch(REQUEST_RETAKE_URL, {
-        method: 'POST',
-        headers: {'Content-Type':'application/json','X-CSRFToken': CSRF},
-        body: JSON.stringify({reason: 'Student requested retake via UI.'})
-      });
-      const j = await res.json();
-      if (j.ok) showMsg(j.message, 'alert-success');
-      else showMsg(j.error || 'Retake request failed', 'alert-danger');
-    } catch (err) {
-      console.error(err);
-      showMsg('Network error on retake', 'alert-danger');
-    }
-  });
-
+  
 })();
 </script>
 <style>
