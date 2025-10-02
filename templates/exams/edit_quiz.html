@@ -237,8 +237,11 @@
       document.getElementById('quiz-publish').value = q.is_published ? 'true' : 'false';
 
       // convert ISO -> local datetime-local format
+      
       function isoToLocalInput(iso) {
-        if (!iso) return '';
+        if (!iso) return null;
+        // Don't convert to UTC, just return "YYYY-MM-DDTHH:MM"
+        return iso;
         const d = new Date(iso);
         // adjust for timezone offset for correct input value
         const tzOff = d.getTimezoneOffset();

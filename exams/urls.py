@@ -25,8 +25,9 @@ urlpatterns = [
     path("leaderboard/", views.leaderboard, name="leaderboard"),
 
     # Quiz management
-    path("admin/quizzes/", views.manage_quizzes, name="manage_quizzes"),
     path("admin/quizzes/create/", views.create_quiz, name="create_quiz"),
+    path("admin/quizzes/manage", views.manage_quizzes, name="manage_quizzes"),
+    path("api/search_quizzes/", views.search_quizzes, name="search_quizzes"),
     path("admin/quizzes/upload-excel/", views.upload_quiz_excel, name="upload_quiz_excel"),
     path("admin/retake-requests/", views.retake_requests_list, name="retake_requests_list"),
     path("admin/retake-request/<int:request_id>/", views.handle_retake_request, name="handle_retake_request"),
@@ -35,6 +36,8 @@ urlpatterns = [
     # Admin dashboard and retake requests from students
     path("admin/dashboard/", views.admin_dashboard, name="admin_dashboard"),
     path("admin/dashboard/data/", views.admin_dashboard_data, name="admin_dashboard_data"),
+    path("admin/notifications/<int:pk>/mark-read/", views.mark_notification_read, name="mark_notification_read"),
+
     path('dashboard/superadmin/', views.superadmin_dashboard, name='superadmin_dashboard'),
 
     # Classes

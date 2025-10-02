@@ -286,9 +286,9 @@ def admin_dashboard_data(request):
     ]
 
     # Leaderboard (top students by average obtained_marks across answers)
-    leaderboard_qs = StudentQuizAttempt.objects.filter(is_submitted=True).values("student__username", 'student__first_name', 'student__student_class__name').annotate(avg_score=Avg("score")).order_by("-avg_score")[:10]
+    leaderboard_qs = StudentQuizAttempt.objects.filter(is_submitted=True).values("student__username", 'student__first_name', 'student__last_name', 'student__student_class__name').annotate(avg_score=Avg("score")).order_by("-avg_score")[:10]
 
-    leaderboard = [{"username": x["student__username"], "first_name": x["student__first_name"], "class": x["student__student_class__name"], "avg_score": float(x["avg_score"] or 0)} for x in leaderboard_qs]
+    leaderboard = [{"username": x["student__username"], "first_name": x["student__first_name"], "last_name": x['student__last_name'], "class": x["student__student_class__name"], "avg_score": float(x["avg_score"] or 0)} for x in leaderboard_qs]
 
     # Class performance (avg obtained marks grouped by class)
     class_perf_qs = Answer.objects.values("attempt__quiz__subject__school_class__name").annotate(avg_score=Avg("obtained_marks")).order_by("attempt__quiz__subject__school_class__name")
@@ -1226,6 +1226,48 @@ def manage_quizzes(request):
     return render(request, "exams/manage_quizzes.html", {"page_obj": page_obj})
 
 
+
+def search_quizzes(request):
+    q = request.GET.get("q", "")
+    page_number = request.GET.get("page", 1)
+
+    quizzes = Quiz.objects.all()
+    if q:
+        quizzes = quizzes.filter(
+            title__icontains=q
+        ) | quizzes.filter(
+            subject__name__icontains=q
+        ) | quizzes.filter(
+            subject__school_class__name__icontains=q
+        )
+
+    paginator = Paginator(quizzes.order_by("-start_time"), 5)  # 5 per page
+    page_obj = paginator.get_page(page_number)
+
+    data = {
+        "results": [
+            {
+                "id": quiz.id,
+                "title": quiz.title,
+                "subject": quiz.subject.name,
+                "class_name": quiz.subject.school_class.name,
+                "start_time": quiz.start_time.strftime("%Y-%m-%d %H:%M"),
+                "end_time": quiz.end_time.strftime("%Y-%m-%d %H:%M"),
+                "is_published": quiz.is_published,
+            }
+            for quiz in page_obj
+        ],
+        "current_page": page_obj.number,
+        "num_pages": paginator.num_pages,
+        "has_previous": page_obj.has_previous(),
+        "has_next": page_obj.has_next(),
+        "previous_page": page_obj.previous_page_number() if page_obj.has_previous() else None,
+        "next_page": page_obj.next_page_number() if page_obj.has_next() else None,
+    }
+    return JsonResponse(data)
+
+
+
 @login_required
 @user_passes_test(is_admin)
 def create_quiz(request):
@@ -1987,24 +2029,16 @@ def edit_quiz_ajax(request, quiz_id):
             quiz.title = title
             quiz.subject = subject
             # parse start/end strings same as in create; expecting ISO or "YYYY-MM-DD HH:MM"
-            from datetime import datetime
-            from django.utils import timezone
-            def parse_dt(s):
-                if not s: return None
-                try:
-                    if "T" in s: s = s.replace("T"," ")
-                    return timezone.make_aware(datetime.strptime(s, "%Y-%m-%d %H:%M"))
-                except Exception:
-                    try:
-                        return timezone.make_aware(datetime.fromisoformat(s))
-                    except Exception:
-                        return None
-            st = parse_dt(start_time)
-            et = parse_dt(end_time)
-            if not st or not et:
-                return JsonResponse({"ok": False, "error": "Invalid start/end time format."}, status=400)
-            quiz.start_time = st
-            quiz.end_time = et
+            from django.utils.dateparse import parse_datetime
+
+            start_time = parse_datetime(payload.get("start_time"))
+            end_time = parse_datetime(payload.get("end_time"))
+
+            if not start_time or not end_time:
+                return JsonResponse({"ok": False, "error": "Invalid start/end time format."}, status=400) 
+            
+            quiz.start_time = start_time
+            quiz.end_time = end_time
             quiz.duration_minutes = int(duration_minutes)
             quiz.is_published = is_published
             quiz.save()
@@ -2409,7 +2443,7 @@ def take_quiz_view(request, quiz_id):
 
     # ensure questions are prefetched for template rendering
     questions = quiz.questions.prefetch_related("choices").all()
-
+    print(questions)
     # also pass existing saved answers to prefill (dict question_id -> answer)
     saved_answers = {}
     for ans in Answer.objects.filter(attempt=attempt).select_related("selected_choice", "question"):

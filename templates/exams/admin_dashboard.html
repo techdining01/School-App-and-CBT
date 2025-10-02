@@ -97,7 +97,7 @@ endblock title %} {% block content %}
               <tr>
                 <th>#</th>
                 <th>Student</th>
-                <th>First Name</th>
+                <th>Full Name</th>
                 <th>Class</th>
                 <th>Avg Score</th>
               </tr>
@@ -243,7 +243,7 @@ endblock title %} {% block content %}
     <div class="col-md-3"><div class="card p-2 text-center">Teachers<br><strong>${s.teachers}</strong></div></div>
     <div class="col-md-3"><div class="card p-2 text-center">Students<br><strong>${s.students}</strong></div></div>
     <div class="col-md-3"><div class="card p-2 text-center">Pending<br><strong>${s.pending_users}</strong></div></div>
-    <div class="col-md-3"><div class="card p-2 text-center">Quizzes<br><strong>${s.quizzes}</strong></div></div>
+    <div class="col-md-3"><div class="card p-2 text-center">Exams<br><strong>${s.quizzes}</strong></div></div>
     <div class="col-md-3"><div class="card p-2 text-center">Subjects<br><strong>${s.subjects}</strong></div></div>
     <div class="col-md-3"><div class="card p-2 text-center">Classes<br><strong>${s.classes}</strong></div></div>
     `;
@@ -319,8 +319,8 @@ endblock title %} {% block content %}
       let lbHtml = "";
       data.leaderboard.forEach((l, idx) => {
         lbHtml += `<tr><td>${idx + 1}</td><td>${l.username}</td><td>${
-          l.first_name
-        }</td><td>${l.class}</td><td>${l.avg_score.toFixed(2)}</td></tr>`;
+          l.first_name} ${l.last_name}
+        </td><td>${l.class}</td><td>${l.avg_score.toFixed(2)}</td></tr>`;
       });
       document.getElementById("leaderboard").innerHTML = lbHtml;
 
@@ -578,7 +578,7 @@ endblock title %} {% block content %}
           alert("Error: " + (data.error || "Unknown error"));
         }
       } catch (err) {
-        alert("Error updating quiz status.");
+        alert("Error updating exam status.");
       }
     }
 
@@ -610,4 +610,4 @@ endblock title %} {% block content %}
 </div>
   {% endblock %} {% endblock %}
 
-{% endblock %}
+{% endblock %} 
