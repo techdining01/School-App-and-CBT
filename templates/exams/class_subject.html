@@ -5,8 +5,11 @@
   <div class="d-flex justify-content-between align-item-center mb-3">         
     <h5></h5>   
     <div>
-        <a class="btn btn-success" style="width: 160px; height: 45px;font-size: 1.1rem;" href="{% url 'manage_quizzes' %}">manage exam</a>
-        <a class="btn btn-primary" style="width: 140px; height: 45px;font-size: 1.1rem;" href="{% url 'dashboard' %}">Dashboard</a>
+      <nav class="d-flex gap-3">
+      <a class="btn btn-warning btn-sm" href="{% url 'create_quiz' %}">Create Exam</a>
+      <a class="btn btn-success" href="{% url 'manage_quizzes' %} ">Manage exam</a>
+      <a class="btn btn-primary" href="{% url 'dashboard' %}">Dashboard</a>
+      </nav>     
     </div>
   </div>
   <div class="row g-4">

@@ -209,7 +209,7 @@ def load_users(request):
     users = User.objects.exclude(role="superadmin").order_by("-date_joined")
 
     if search:
-        users = users.filter(username__icontains=search)
+        users = users.filter(username__icontains=search) | users.filter(first_name__icontains=search) | users.filter(last_name__icontains=search)
 
     paginator = Paginator(users, 10)  
     users_page = paginator.get_page(page)
@@ -219,6 +219,8 @@ def load_users(request):
             {
                 "id": u.id,
                 "username": u.username,
+                'first_name': u.first_name,
+                'last_name': u.last_name,
                 "email": u.email,
                 "role": u.role,
                 "date_joined": u.date_joined.strftime("%d-%m-%Y %H:%M"),

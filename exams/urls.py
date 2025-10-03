@@ -26,7 +26,8 @@ urlpatterns = [
 
     # Quiz management
     path("admin/quizzes/create/", views.create_quiz, name="create_quiz"),
-    path("admin/quizzes/manage", views.manage_quizzes, name="manage_quizzes"),
+    path("admin/manage/quizzes/", views.manage_quizzes_redirect, name="manage_quizzes"),
+    path("admin/manage/quizzes/admin", views.manage_quizzes, name="manage_quizzes_admin"),
     path("api/search_quizzes/", views.search_quizzes, name="search_quizzes"),
     path("admin/quizzes/upload-excel/", views.upload_quiz_excel, name="upload_quiz_excel"),
     path("admin/retake-requests/", views.retake_requests_list, name="retake_requests_list"),
@@ -49,8 +50,10 @@ urlpatterns = [
     # Teacher Dashboard management
     path("teacher/dashboard/", views.teacher_dashboard, name="teacher_dashboard"),
     path("teacher/dashboard/data/", views.teacher_dashboard_data, name="teacher_dashboard_data"),
+    path("manage/quizzes/teacher/", views.manage_quizzes_teacher, name="manage_quizzes_teacher"),
     path("teacher/broadcast/", views.teacher_broadcast, name="teacher_broadcast"),
-    path("teacher/grade/<int:answer_id>/", views.grade_answer, name="grade_answer"),
+    path("grading/list/", views.grading_list, name="grading_list"),
+    path("teacher/grade/", views.grade_answer, name="grade_answer"),
     path("teacher/notification/<int:notif_id>/read/", views.mark_notification_read, name="mark_notification_read"),
 
 
@@ -106,21 +109,4 @@ urlpatterns = [
     path("api/quizzes/<int:quiz_id>/toggle-publish/", views.toggle_quiz_publish, name="toggle_quiz_publish"),
     path("api/quizzes/<int:quiz_id>/", views.quiz_detail_api, name="quiz_detail_api"),
    
-   
-   
 ]
-
-
- # User management
-    # path("admin/users/", views.manage_users, name="manage_users"),
-    # path("admin/users/create/", views.create_user, name="create_user"),
-    # path("attempt/<int:attempt_id>/result/", views.quiz_result, name="quiz_result"),
-
-
- # broadcast + notifications API endpoints
-    # path("api/broadcast/", views.api_broadcast, name="api_broadcast"),
-    # path("api/notifications/unread/", views.api_notifications_unread, name="api_notifications_unread"),
-    # path("api/notifications/mark-read/", views.api_notifications_mark_read, name="api_notifications_mark_read"),
-
-
-    # path("quiz/<int:quiz_id>/approve-retake/<int:student_id>/", views.approve_retake, name="approve_retake"),

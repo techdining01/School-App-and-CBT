@@ -8,7 +8,12 @@
       <div><strong>Score:</strong> {{ total_score }}</div>
     </div>
     <div class="card-body">
+      <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
       <canvas id="resultChart" height="100"></canvas>
+
+      {# Safely embed JSON data #}
+      {{ chart_labels|json_script:"chart-labels" }}
+      {{ chart_values|json_script:"chart-values" }}
 
 
       <hr>
@@ -53,26 +58,27 @@
     </div>
   </div>
 </div>
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-const labels = {{ chart_labels|safe }};
-const values = {{ chart_values|safe }};
+    // debug: check chart data in console
+  const labels = JSON.parse(document.getElementById('chart-labels').textContent);
+  const values = JSON.parse(document.getElementById('chart-values').textContent);
+  console.log('chart labels:', labels);
+  console.log('chart values:', values);
 
-const ctx = document.getElementById('resultChart').getContext('2d');
-new Chart(ctx, {
-  type: 'bar',
-  data: {
-    labels: labels,
-    datasets: [{
-      label: 'Percent of marks obtained (objectives)',
-      data: values,
-      backgroundColor: values.map(v => v === null ? 'rgba(200,200,200,0.5)' : 'rgba(54,162,235,0.7)')
-    }]
-  },
-  options: {
-    scales: { y: { beginAtZero: true, max: 100 } }
-  }
-});
+    const ctx = document.getElementById('resultChart').getContext('2d');
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Percent of marks obtained (objectives)',
+        data: values,
+        backgroundColor: values.map(v => v === null ? 'rgba(200,200,200,0.5)' : 'rgba(54,162,235,0.7)')
+      }]
+    },
+    options: {
+      scales: { y: { beginAtZero: true, max: 100 } }
+    }
+  });
 </script>
 {% endblock %}

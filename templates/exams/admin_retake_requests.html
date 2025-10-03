@@ -4,7 +4,6 @@
 {% block content %}
 <div class="container mt-4">
   <div class="d-flex justify-content-between align-item-center mb-3">         
-    
     <h2 class='fw-bold mb-3'> 📌 Retake Requests </h2>
     <div>
         <a class="btn btn-success" style="width: 160px; height: 45px;font-size: 1.1rem;" href="{% url 'manage_quizzes' %}">Manage exam</a>
@@ -12,97 +11,64 @@
     </div>
   </div>
 
-    {% if retake_requests %}
-        <table class="table table-bordered table-striped mt-3">
-            <thead>
-                <tr>
-                    <th>Student</th>
-                    <th>Quiz</th>
-                    <th>Requested At</th>
-                    <th>Reviewed By</th>
-                    <th>Status</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for rr in page_obj %}
-                    <tr id="req-{{ rr.id }}">
-                        <td>{{ rr.student.username }}</td>
-                        <td>{{ rr.quiz.title }}</td>
-                        <td>{{ rr.reviewed_at|date:"d-m-Y H:i" }}</td>
-                        <td>{{ rr.reviewed_by }}</td>
-                        <td>
-                            <span class="badge 
-                                {% if rr.status == 'pending' %} bg-warning
-                                {% elif rr.status == 'approved' %} bg-success
-                                {% else %} bg-danger {% endif %}">
-                                {{ rr.status }}
-                            </span>
-                        </td>
-                        <td>
-                            {% if rr.status == "pending" %}
-                                <button class="btn btn-sm btn-primary approve-btn" data-id="{{ rr.id }}">
-                                    Approve
-                                </button>
-                            {% else %}
-                                <span class="text-muted">No action</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    {% else %}
-        <p>No retake requests found.</p>
-    {% endif %}
+  <!-- 🔍 Search Bar -->
+  <div class="mb-3">
+    <input type="text" id="search-bar" class="form-control" placeholder="Search by student or quiz..." />
+  </div>
 
-
- <!-- Pagination -->
-        <nav aria-label="Page navigation">
-            <ul class="pagination justify-content-center">
-                {% if page_obj.has_previous %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
-                    </li>
-                {% endif %}
-
-                <li class="page-item disabled">
-                    <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
-                </li>
-
-                {% if page_obj.has_next %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
-                    </li>
-                {% endif %}     
+  <div id="requests-container">
+    {% include "exams/partials/_retake_requests_table.html" %}
+  </div>
 </div>
 
 <script>
 document.addEventListener("DOMContentLoaded", function() {
-    document.querySelectorAll(".approve-btn").forEach(btn => {
-        btn.addEventListener("click", function() {
-            let reqId = this.getAttribute("data-id");
+    // Approve buttons handler
+    function bindApproveButtons() {
+        document.querySelectorAll(".approve-btn").forEach(btn => {
+            btn.addEventListener("click", function() {
+                let reqId = this.getAttribute("data-id");
 
-            fetch("{% url 'handle_retake_request' 0 %}".replace("0", reqId), {
-                method: "POST",
-                headers: {
-                    "X-CSRFToken": "{{ csrf_token }}",
-                    "X-Requested-With": "XMLHttpRequest"
-                }
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.ok) {
-                    alert("✅ " + data.message);
-                    document.querySelector("#req-" + reqId + " .badge").classList.remove("bg-warning");
-                    document.querySelector("#req-" + reqId + " .badge").classList.add("bg-success");
-                    document.querySelector("#req-" + reqId + " .badge").innerText = "approved";
-                    document.querySelector("#req-" + reqId + " .approve-btn").remove();
-                } else {
-                    alert("❌ " + data.error);
-                }
-            })
-            .catch(err => console.error(err));
+                fetch("{% url 'handle_retake_request' 0 %}".replace("0", reqId), {
+                    method: "POST",
+                    headers: {
+                        "X-CSRFToken": "{{ csrf_token }}",
+                        "X-Requested-With": "XMLHttpRequest"
+                    }
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        alert("✅ " + data.message);
+                        let row = document.querySelector("#req-" + reqId);
+                        row.querySelector(".badge").classList.remove("bg-warning");
+                        row.querySelector(".badge").classList.add("bg-success");
+                        row.querySelector(".badge").innerText = "approved";
+                        let btn = row.querySelector(".approve-btn");
+                        if (btn) btn.remove();
+                    } else {
+                        alert("❌ " + data.error);
+                    }
+                })
+                .catch(err => console.error(err));
+            });
+        });
+    }
+
+    bindApproveButtons();
+
+    // Search functionality (AJAX)
+    let searchBar = document.getElementById("search-bar");
+    searchBar.addEventListener("input", function() {
+        let query = this.value;
+
+        fetch(`{% url 'retake_requests_list' %}?q=${query}`, {
+            headers: { "X-Requested-With": "XMLHttpRequest" }
+        })
+        .then(res => res.text())
+        .then(html => {
+            document.getElementById("requests-container").innerHTML = html;
+            bindApproveButtons(); // rebind after reload
         });
     });
 });

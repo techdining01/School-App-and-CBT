@@ -12,10 +12,10 @@
       <h5 class="card-title">{{ attempt.quiz.title }}</h5>
       <p><strong>Subject:</strong> {{ attempt.quiz.subject.name }}</p>
       <p><strong>Class:</strong> {{ attempt.quiz.subject.school_class }}</p>
-      <p><strong>Attempt Date:</strong> {{ attempt.completed_at|date:"M d, Y H:i" }}</p>
+      <p><strong>Attempt Date:</strong> {{ attempt.submitted_at|date:"M d, Y H:i" }}</p>
       <p><strong>Status:</strong>
         {% if attempt.completed %}
-          <span class="badge bg-success">Completed</span>
+          <span class="badge bg-success">Submitted</span>
         {% else %}
           <span class="badge bg-secondary">Ongoing</span>
         {% endif %}

@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Manage Exams{% endblock %}
+{% block title %} Teacher Manage Exams{% endblock %}
 
 {% block content %}
 {% csrf_token %}
@@ -11,18 +11,11 @@
     <nav class="d-flex gap-3">
       <a class="btn btn-success btn-sm" href="{% url 'create_quiz' %}">Create Exam</a>
       <a class="btn btn-warning btn-sm" href="{% url 'manage_classes_subjects' %}">Class & Subject</a>
-      <a class="btn btn-primary btn-sm" href="{% url 'retake_requests_list' %}">Allow retake exam</a>
       <a class="btn btn-dark btn-sm" href="{% url 'dashboard' %}">Back</a>
     </nav>
   </div>
 
-  <!-- Search -->
-  <div class="row mt-3">
-    <div class="col-md-6">
-      <input type="text" id="quizSearch" class="form-control" placeholder="🔍 Search by title, subject, or class...">
-    </div>
-  </div>
-
+  
   <br>
 
   <!-- Quizzes table -->

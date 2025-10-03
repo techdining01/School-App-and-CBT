@@ -5,7 +5,13 @@
 <div class="container mt-4">
   <div class="d-flex justify-content-between align-items-center">
     <h1 class="fw-bold">Edit Exam</h1>
+    <nav class="d-flex gap-3">
+    <a class="btn btn-info btn-sm" href="{% url 'create_quiz' %}">Create Exam</a>
+    <a class="btn btn-warning btn-sm" href="{% url 'manage_classes_subjects' %}">Class & Subject</a>
+    <a class="btn btn-success" href="{% url 'manage_quizzes' %} ">Manage exam</a>
+    <a class="btn btn-primary" href="{% url 'dashboard' %}">Dashboard</a>
     <a class="btn btn-outline-secondary" href="{% url 'manage_quizzes' %}">← Back</a>
+    </nav>     
   </div>
 
   <!-- Hidden CSRF form -->
