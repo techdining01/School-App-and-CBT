@@ -72,7 +72,7 @@
     <div class="col-md-5">
       <div class="card p-3">
         <h5>Import from Excel</h5>
-        <p class="small text-muted">Use the Excel template: metadata rows (quiz_title, class_name, subject_name, start_time, end_time, duration_minutes, is_published) then header row 'question_text' etc. See docs above.</p>
+        <p class="small text-muted">Use the Excel template: metadata rows (Exam_title, class_name, subject_name, start_time, end_time, duration_minutes, is_published) then header row 'question_text' etc. See docs above.</p>
         <form id="excel-form" enctype="multipart/form-data">
           {% csrf_token %}
           <div class="mb-2">
@@ -192,7 +192,7 @@
       if (!data.ok) {
         alert('Error: ' + (data.error || 'Failed'));
       } else {
-        alert('Quiz created successfully!');
+        alert('Exam created successfully!');
         window.location.href = "{% url 'manage_quizzes' %}";
       }
     } catch (err) {
@@ -220,7 +220,7 @@
       if (!data.ok) {
         out.innerHTML = `<div class="alert bg-red-100 p-2">${data.error}</div>`;
       } else {
-        out.innerHTML = `<div class="alert bg-green-100 p-2">Imported quiz id ${data.quiz_id}</div>`;
+        out.innerHTML = `<div class="alert bg-green-100 p-2">Imported Exam id ${data.quiz_id}</div>`;
         setTimeout(()=> window.location.href = "{% url 'manage_quizzes' %}", 900);
       }
     } catch (err) {

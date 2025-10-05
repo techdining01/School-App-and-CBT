@@ -2,14 +2,22 @@
 {% load static %}
 {% block content %}
 <div class="container mt-4">
-  <h2 class="mb-3 fw-bold">👨‍🏫 Teacher Dashboard</h2>
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h2 class="mb-3 fw-bold">👨‍🏫 Teacher Dashboard</h2>
+    </div>
+    <div class="d-flex align-items-center">
+      <a href="{% url 'manage_quizzes' %}" class="btn btn-success btn-sm me-2">Advance</a>
+    </div>
+  </div>
 
-  <!-- Toast area -->
+  <!-- Toast container -->
   <div aria-live="polite" aria-atomic="true" class="position-relative">
     <div id="toast-container" class="toast-container position-fixed top-0 end-0 p-3"></div>
   </div>
 
   <div class="row">
+    <!-- LEFT COLUMN -->
     <div class="col-lg-4">
       <!-- Notifications -->
       <div class="card mb-3">
@@ -45,101 +53,88 @@
         </form>
 
         <h5>📝 Your Broadcasts</h5>
-        <ul class="list-group">
-          {% for b in page_obj %}
-          <li class="list-group-item">
-            <strong>{{ b.get_target_display }}</strong>: {{ b.message }}
-            <br><small class="text-muted">{{ b.created_at|date:"SHORT_DATETIME_FORMAT" }}</small>
-          </li>
-          {% empty %}
-          <li class="list-group-item">No broadcasts yet</li>
-          {% endfor %}
-        </ul>
-
-        <div class="mt-3">
-          {% if page_obj.has_previous %}
-          <a href="?page={{ page_obj.previous_page_number }}" class="btn btn-outline-secondary btn-sm">Prev</a>
-          {% endif %}
-          <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
-          {% if page_obj.has_next %}
-          <a href="?page={{ page_obj.next_page_number }}" class="btn btn-outline-secondary btn-sm">Next</a>
-          {% endif %}
+        <ul class="list-group" id="broadcasts-list"></ul>
+        <div class="mt-3 d-flex justify-content-between align-items-center">
+          <button class="btn btn-outline-secondary btn-sm" id="broadcast-prev">Prev</button>
+          <small id="broadcast-pager"></small>
+          <button class="btn btn-outline-secondary btn-sm" id="broadcast-next">Next</button>
         </div>
       </div>
 
       <!-- Download Reports -->
       <div class="card mb-3 p-3">
-        <a href="#" id="download-class-report" class="btn btn-success w-100">📥 Download Closed Quiz Report</a>
+        <a href="#" id="download-class-report" class="btn btn-success w-100">📥 Download Closed Exam Report</a>
       </div>
-     
+
+      <!-- Exam Management -->
       <div class="card mt-3">
-        <div class="card-header d-flex justify-content-between">
-          <strong>Exams Management</strong>
-        </div>
+        <div class="card-header"><strong>Exams Management</strong></div>
         <div class="card-body">
-          <a href="{% url 'create_quiz' %}" class="btn btn-primary sm">Create Exam</a>
-          <a href="{% url 'manage_quizzes_teacher' %}" class="btn btn-warning sm">Edit Exams</a>
+          <a href="{% url 'create_quiz' %}" class="btn btn-primary btn-sm">Create Exam</a>
+          <a href="{% url 'manage_quizzes_teacher' %}" class="btn btn-warning btn-sm">Edit Exams</a>
         </div>
       </div>
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="col-lg-8">
+      <!-- Summary -->
+      <div class="card mb-3">
+        <div class="card-header"><strong>📊 Summary</strong></div>
+        <div class="card-body" id="summary-area"></div>
+      </div>
+
+      <!-- Quizzes -->
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between">
+          <strong>📝 Quizzes</strong>
+          <small>auto-refresh</small>
+        </div>
+        <div class="card-body" id="quizzes-area" style="min-height:120px;"></div>
+        <div class="card-footer d-flex justify-content-between">
+          <button class="btn btn-sm btn-outline-secondary" id="quizzes-prev">Prev</button>
+          <small id="quizzes-pager"></small>
+          <button class="btn btn-sm btn-outline-secondary" id="quizzes-next">Next</button>
+        </div>
+      </div>
+
+      <!-- Grading -->
+      <div class="card mb-3">
+        <div class="card-header"><strong>✏️ Pending Grading</strong></div>
+        <div class="card-body" id="grading-area"></div>
+        <div class="card-footer d-flex justify-content-between">
+          <button class="btn btn-sm btn-outline-secondary" id="grading-prev">Prev</button>
+          <small id="grading-pager"></small>
+          <button class="btn btn-sm btn-outline-secondary" id="grading-next">Next</button>
+        </div>
+        <div class="card-footer">
+          <a href="{% url 'grading_list' %}" class="btn btn-outline-primary btn-sm w-100">🔗 Go to Grading List</a>
+        </div>
+      </div>
+
+      <!-- Chart -->
+      <div class="card mb-3">
+        <div class="card-header"><strong>📈 Class Performance</strong></div>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <div class="card-body"><canvas id="performanceChart" height="120"></canvas></div>
+      </div>
+
+      <!-- Leaderboard -->
+      <div class="card mb-3">
+        <div class="card-header"><strong>🏆 Leaderboard (Top Students)</strong></div>
+        <ul id="leaderboard-list" class="list-group list-group-flush"></ul>
+      </div>
+    </div>
   </div>
-
-  <div class="col-lg-8">
-    <!-- Summary -->
-    <div class="card mb-3">
-      <div class="card-header"><strong>📊 Summary</strong></div>
-      <div class="card-body" id="summary-area"></div>
-    </div>
-
-    <!-- Quizzes -->
-    <div class="card mb-3">
-      <div class="card-header d-flex justify-content-between">
-        <strong>📝 Quizzes</strong>
-        <small>auto-refresh</small>
-      </div>
-      <div class="card-body" id="quizzes-area" style="min-height:120px;"></div>
-      <div class="card-footer d-flex justify-content-between">
-        <button class="btn btn-sm btn-outline-secondary" id="quizzes-prev">Prev</button>
-        <small id="quizzes-pager"></small>
-        <button class="btn btn-sm btn-outline-secondary" id="quizzes-next">Next</button>
-      </div>
-    </div>
-
-    <!-- Grading tasks -->
-    <div class="card mb-3">
-      <div class="card-header"><strong>✏️ Pending Grading</strong></div>
-      <div class="card-body" id="grading-area"></div>
-      <div class="card-footer d-flex justify-content-between">
-        <button class="btn btn-sm btn-outline-secondary" id="grading-prev">Prev</button>
-        <small id="grading-pager"></small>
-        <button class="btn btn-sm btn-outline-secondary" id="grading-next">Next</button>
-      </div>
-      <div class="card-footer">
-        <a href="{% url 'grading_list' %}" class="btn btn-outline-primary btn-sm w-100">🔗 Go to Grading List</a>
-      </div>
-    </div>
-
-    <!-- Performance chart -->
-    <div class="card mb-3">
-      <div class="card-header"><strong>📈 Class Performance</strong></div>
-      <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-      <div class="card-body"><canvas id="performanceChart" height="120"></canvas></div>
-    </div>
-
-    <!-- Leaderboard -->
-    <div class="card mb-3">
-      <div class="card-header"><strong>🏆 Leaderboard (Top Students)</strong></div>
-      <ul id="leaderboard-list" class="list-group list-group-flush"></ul>
-    </div>
-  </div>
-</div>
 </div>
 
 {% block extra_js %}
-<!-- CSRF -->
 <form style="display:none;">{% csrf_token %}</form>
 <script>
-  function fetchTeacherDashboard(page=1, notifPage=1, gradePage=1) {
-    fetch(`{% url 'teacher_dashboard_data' %}?page=${page}&notif_page=${notifPage}&grade_page=${gradePage}`)
+  let quizPage = 1, notifPage = 1, gradePage = 1, broadcastPage = 1;
+
+  function fetchTeacherDashboard() {
+    fetch(`{% url 'teacher_dashboard_data' %}?page=${quizPage}&notif_page=${notifPage}&grade_page=${gradePage}&broadcast_page=${broadcastPage}`)
       .then(res => res.json())
       .then(data => {
         // Summary
@@ -148,65 +143,74 @@
             <div class="col-md-6">
               <p><strong>Teacher:</strong> ${data.summary.teacher}</p>
               <p><strong>Class:</strong> ${data.summary.student_class}</p>
-              <p><strong>Total Exams for ${data.summary.student_class}:</strong> ${data.summary.total_quizzes}</p>
-              <p><strong>My Exams for ${data.summary.student_class}:</strong> ${data.summary.my_quizzes}</p>
-              <p><strong>Total Exams Attempted:</strong> ${data.summary.attempts}</p>
+              <p><strong>Class Teacher's Exams:</strong> ${data.summary.my_class_quizzes}</p>
+              <p><strong>Total Class Exams:</strong> ${data.summary.total_quizzes}</p>
+              <p><strong>Total Exams Created by me:</strong> ${data.summary.my_quizzes}</p>
             </div>
             <div class="col-md-6">
-              <p><strong>Objectives:</strong> ${data.summary.objectives}</p>
-              <p><strong>Pending Subjectives:</strong> ${data.summary.pended}</p>
-              <p><strong>Graded Subjectives:</strong> ${data.summary.graded}</p>
-              <p><strong>Total Students in Class:</strong> ${data.summary.total_students}</p>
+              <p><strong>Total Attempts:</strong> ${data.summary.attempts}</p>
+              <p><strong>Objective Qs:</strong> ${data.summary.objectives}</p>
+              <p><strong>Pending:</strong> ${data.summary.pended}</p>
+              <p><strong>Graded:</strong> ${data.summary.graded}</p>
+              <p><strong>Students:</strong> ${data.summary.total_students}</p>
             </div>
-          </div>
-        `;
+          </div>`;
 
         // Quizzes
-        document.getElementById("quizzes-area").innerHTML = data.quizzes.map(q =>
-          `<div><strong>${q.title}</strong> (${q.class_name}) <br>
-           ${q.created_at} → ${q.end_time}</div>`
-        ).join("<hr>");
+        document.getElementById("quizzes-area").innerHTML =
+          data.quizzes.length ? data.quizzes.map(q =>
+            `<div><strong>${q.title}</strong> (${q.subject}) — ${q.class_name}
+            <br>${q.created_at} → ${q.end_time}</div>`
+          ).join("<hr>") : "<p>No exams yet</p>";
 
-        // Leaderboard
-        document.getElementById("leaderboard-list").innerHTML = data.performance.length
-          ? data.performance.map((s, i) =>
-            `<li class="list-group-item d-flex justify-content-between">
-             <span>${i + 1}. ${s.attempt__student__username}</span>
-             <span><strong>${s.avg_score ? s.avg_score.toFixed(2) : 0}</strong></span>
-           </li>`
-          ).join("")
-          : "<li class='list-group-item'>No data yet</li>";
-
-        // Pending grading
-        document.getElementById("grading-area").innerHTML = data.grading.length
-          ? data.grading.map(t =>
-            `<div><strong>${t.quiz}</strong> - ${t.student} (${t.full_name}) <br>
-             <a href="/exams/teacher/grade/${t.id}/" class="btn btn-sm btn-primary">Grade Now</a></div>`
-          ).join("<hr>")
-          : "<p>No pending grading tasks</p>";
+        document.getElementById("quizzes-pager").innerText =
+          `Page ${data.pagination.quiz_page_number} of ${data.pagination.quiz_num_pages}`;
 
         // Notifications
-        const notifArea = document.getElementById("notifications-list");
-        notifArea.innerHTML = data.notifications.length
-          ? data.notifications.map(n =>
-            `<li class="list-group-item">
-             <div>${n.message}</div>
-             <small class="text-muted">${n.created_at}</small>
-             <button class="btn btn-sm btn-link text-success" onclick="markNotifRead(${n.id})">Mark read</button>
+        document.getElementById("notifications-list").innerHTML =
+          data.notifications.length ? data.notifications.map(n =>
+            `<li class="list-group-item d-flex justify-content-between align-items-start">
+              <div>
+                <div>${n.message}</div>
+                <small class="text-muted">${n.created_at}</small>
+              </div>
+              ${!n.is_read ? `<button class="btn btn-sm btn-success text-white" onclick="markNotifRead(${n.id})">Read</button>` : ''}
             </li>`
-          ).join("")
-          : "<li class='list-group-item'>No new notifications</li>";
+          ).join("") : "<li class='list-group-item'>No notifications</li>";
+
         document.getElementById("notif-count").innerText = data.notifications.length;
+        document.getElementById("notif-pager").innerText =
+          `Page ${data.pagination.notif_page_number} of ${data.pagination.notif_num_pages}`;
+
+        // Broadcasts
+        document.getElementById("broadcasts-list").innerHTML =
+          data.broadcasts.length ? data.broadcasts.map(b =>
+            `<li class="list-group-item"><strong>${b.get_target_display}</strong>: ${b.message}
+            <br><small class="text-muted">${b.created_at}</small></li>`
+          ).join("") : "<li class='list-group-item'>No broadcasts</li>";
+
+        document.getElementById("broadcast-pager").innerText =
+          `Page ${data.pagination.broadcast_page_number} of ${data.pagination.broadcast_num_pages}`;
+
+        // Grading
+        document.getElementById("grading-area").innerHTML =
+          data.grading.length ? data.grading.map(g =>
+            `<div><strong>${g.quiz}</strong> - ${g.student} (${g.full_name})</div>`
+          ).join("<hr>") : "<p>No pending grading</p>";
+
+        document.getElementById("grading-pager").innerText =
+          `Page ${data.pagination.grade_page_number} of ${data.pagination.grade_num_pages}`;
       });
   }
 
   function markNotifRead(id) {
-    fetch(`/notifications/mark/${id}/`, {
+    fetch(`/exams/notifications/mark-read/${id}/`, {
       method: "POST",
       headers: {"X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value}
     }).then(() => fetchTeacherDashboard());
   }
 
+  // Broadcast form
   document.getElementById("broadcast-form").addEventListener("submit", function(e){
     e.preventDefault();
     const formData = new FormData(this);
@@ -220,8 +224,37 @@
     });
   });
 
+  // Pagination buttons
+  document.getElementById("quizzes-prev").onclick = () => { if (quizPage > 1) quizPage--; fetchTeacherDashboard(); };
+  document.getElementById("quizzes-next").onclick = () => { quizPage++; fetchTeacherDashboard(); };
+
+  document.getElementById("notif-prev").onclick = () => { if (notifPage > 1) notifPage--; fetchTeacherDashboard(); };
+  document.getElementById("notif-next").onclick = () => { notifPage++; fetchTeacherDashboard(); };
+
+  document.getElementById("broadcast-prev").onclick = () => { if (broadcastPage > 1) broadcastPage--; fetchTeacherDashboard(); };
+  document.getElementById("broadcast-next").onclick = () => { broadcastPage++; fetchTeacherDashboard(); };
+
+  document.getElementById("grading-prev").onclick = () => { if (gradePage > 1) gradePage--; fetchTeacherDashboard(); };
+  document.getElementById("grading-next").onclick = () => { gradePage++; fetchTeacherDashboard(); };
+
+
+  // Toast notification
+  function showToast(message, type = "info") {
+    const container = document.getElementById("toast-container");
+    const toast = document.createElement("div");
+    toast.className = `toast align-items-center text-bg-${type} border-0 show mb-2`;
+    toast.innerHTML = `
+      <div class="d-flex">
+        <div class="toast-body">${message}</div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+      </div>`;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+  }
+
+
   fetchTeacherDashboard();
-  setInterval(fetchTeacherDashboard, 10000);
+  setInterval(fetchTeacherDashboard, 15000);
 </script>
 {% endblock %}
 {% endblock %}

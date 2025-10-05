@@ -1,5 +1,6 @@
-{% extends "base.html" %} {% load static %} {% block title %} Admin Dashboard {%
-endblock title %} {% block content %}
+{% extends "base.html" %} {% load static %} 
+{% block title %} Admin Dashboard {%endblock title %} 
+{% block content %}
 <div class="container mt-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
@@ -7,8 +8,7 @@ endblock title %} {% block content %}
     </div>
     <div class="d-flex align-items-center">
       <a href="{% url 'manage_quizzes' %}" class="btn btn-success btn-sm me-2"
-        >Advance</a
-      >
+        >Advance</a>
     </div>
   </div>
   <!-- Stats row -->
@@ -608,6 +608,6 @@ endblock title %} {% block content %}
     }
   </script>
 </div>
-  {% endblock %} {% endblock %}
+  {% endblock %} 
 
 {% endblock %} 

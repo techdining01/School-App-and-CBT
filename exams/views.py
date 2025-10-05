@@ -352,112 +352,89 @@ def teacher_dashboard(request):
     """Render teacher dashboard page"""
     return render(request, "teacher_dashboard.html")
 
-
 @login_required
 @user_passes_test(is_teacher_or_admin)
 def teacher_dashboard_data(request):
-    """Provide teacher dashboard data (JSON) with pagination"""
     teacher = request.user
+    student_class = getattr(teacher, "student_class", None)
 
-    student_class = teacher.student_class   # teacher's class
+    # Pagination
+    quiz_page_num = request.GET.get("page", 1)
+    notif_page_num = request.GET.get("notif_page", 1)
+    grade_page_num = request.GET.get("grade_page", 1)
+    broadcast_page_num = request.GET.get("broadcast_page", 1)
 
+    # Quizzes
+    quizzes = Quiz.objects.filter(school_class=student_class).annotate(
+        attempt_count=Count("studentquizattempt")
+    ).order_by("-created_at")
+    quiz_page = Paginator(quizzes, 7).get_page(quiz_page_num)
 
-    if teacher.is_authenticated and teacher.role in ["teacher", "admin", "superadmin"]:
-        teacher = User.objects.filter(id=teacher.id).first()
-        student = User.objects.filter(role="student", student_class=student_class).first()
+    # Broadcasts
+    broadcasts = Notification.objects.filter(sender=teacher).order_by("-created_at")
+    broadcast_page = Paginator(broadcasts, 5).get_page(broadcast_page_num)
 
-        # Classes for exams linked to teacher
-        classes = Quiz.objects.filter(created_by=teacher).values("school_class__name").distinct()
+    # Notifications
+    notifications = Notification.objects.filter(recipient=teacher).order_by("-created_at")
+    notif_page = Paginator(notifications, 5).get_page(notif_page_num)
 
-        # Quizzes created by teacher
-        quizzes = Quiz.objects.filter(school_class=student_class).annotate(
-            attempt_count=Count("studentquizattempt")).order_by("-created_at")
+    # Grading
+    pending_answers = Answer.objects.filter(
+        attempt__quiz__created_by=teacher, is_pending=True
+    ).order_by("-graded_at")
+    grade_page = Paginator(pending_answers, 5).get_page(grade_page_num)
 
-        quiz_page = Paginator(quizzes, 7).get_page(request.GET.get('page', 1))
-
-        # Performance stats
-        performance = (
-            Answer.objects.filter(attempt__student__student_class=student_class)
-            .values("attempt__student__username")
-            .annotate(avg_score=Avg("obtained_marks"))
-        )
-
-        # Notifications
-        notifications = Notification.objects.filter(recipient=teacher).order_by("-created_at")
-        notif_page = Paginator(notifications, 5).get_page(request.GET.get("notif_page", 1))
-
-        # Logs
-        logs = ActionLog.objects.filter(user=teacher).order_by("-timestamp")
-        logs_page = Paginator(logs, 5).get_page(request.GET.get("log_page", 1))
-
-        # Pending grading (subjective answers without marks)
-        pending_answers = Answer.objects.filter(
-            attempt__quiz__created_by=request.user ,  text_answer__isnull=False
-        ).order_by("-graded_at")
-        grade_page = Paginator(pending_answers, 5).get_page(request.GET.get("grade_page", 1))
-
-
-        # ---------- SUMMARY ----------
-        # my_quizzes (same as total_quizzes but keep name used in some templates)
-        my_quizzes = Quiz.objects.filter(created_by=request.user).count()
-
-        # Objectives count = number of objective questions in this teacher's quizzes
-        objectives = Question.objects.filter(quiz__school_class=teacher.student_class, question_type="objective").count()
-    
-        # Graded subjectives count (answers that are subjective and graded)
-        graded_subjectives = Answer.objects.filter(
-            question__quiz__created_by=teacher,
-            question__question_type="subjective",
-            is_pending=False  
-        ).count() # graded
-
-        # Pending subjectives (need teacher grading)
-        pending_subjectives = Answer.objects.filter(
-            question__quiz__created_by=request.user,
-            question__question_type="subjective",
-            is_pending=True
-        ).count()
-        attempts = StudentQuizAttempt.objects.filter(student=student ).count()
+    # Performance
+    performance = (
+        Answer.objects.filter(attempt__student__student_class=student_class)
+        .values("attempt__student__username")
+        .annotate(avg_score=Avg("obtained_marks"))
+    )
 
     data = {
         "summary": {
-            "total_quizzes": quizzes.count(),
-            "my_quizzes": my_quizzes,
-            "objectives": objectives,
-            "graded": graded_subjectives,
-            "pended": pending_subjectives,
+            "teacher": teacher.username,
             "student_class": str(student_class),
-            "teacher" : str(teacher),
-            "attempts": str(attempts),
-            "quiz_page": str(quiz_page),
-            "notif_page": str(notif_page),
-            "logs_page": str(logs_page),
-            "grade_page": str(grade_page),
-            "total_students": User.objects.filter(student_class=request.user.student_class, role="student").count(),
+            "total_quizzes": quizzes.count(),
+            "my_quizzes": Quiz.objects.filter(created_by=teacher).count(),
+            "my_class_quizzes": Quiz.objects.filter(created_by=teacher, school_class=student_class).count(),
+            "objectives": Question.objects.filter(quiz__school_class=student_class, question_type="objective").count(),
+            "graded": Answer.objects.filter(question__quiz__created_by=teacher, is_pending=False).count(),
+            "pended": Answer.objects.filter(question__quiz__created_by=teacher, is_pending=True).count(),
+            "attempts": StudentQuizAttempt.objects.filter(student__student_class=student_class).count(),
+            "total_students": User.objects.filter(student_class=student_class, role="student").count(),
         },
         "quizzes": [
-            {"id": q.id, "title": q.title, "attempts": q.attempt_count, "subject": q.subject.name, "class_name": q.subject.school_class.name, "created_at": datetime.date(q.created_at), "start_time": datetime.date(q.start_time), "end_time": datetime.date(q.end_time), "is_published": q.is_published, "allow_retake": getattr(q, "allow_retake", False)}
+            {
+                "id": q.id,
+                "title": q.title,
+                "subject": q.subject.name,
+                "class_name": q.subject.school_class.name,
+                "created_at": q.created_at.strftime("%d-%m-%Y %H:%M"),
+                "end_time": q.end_time.strftime("%d-%m-%Y %H:%M"),
+                "attempts": q.attempt_count,
+                "allow_retake": getattr(q, "allow_retake", False),
+            }
             for q in quiz_page
         ],
-        "performance": list(performance),
         "notifications": [
             {
                 "id": n.id,
                 "message": n.message,
                 "is_read": n.is_read,
-                "created_at": datetime.date(n.created_at)
+                "created_at": n.created_at.strftime("%Y-%m-%d %H:%M"),
             }
             for n in notif_page
         ],
-        "logs": [
+        "broadcasts": [
             {
-                "action_type": l.action_type,
-                "user": (l.user.username if l.user else "system"),
-                "timestamp": datetime.date(l.timestamp),
-                "details": l.details,
+                "message": b.message,
+                "get_target_display": b.get_target_display(),
+                "created_at": b.created_at.strftime("%Y-%m-%d %H:%M"),
             }
-            for l in logs_page
+            for b in broadcast_page
         ],
+        "performance": list(performance),
         "grading": [
             {
                 "id": a.id,
@@ -467,20 +444,86 @@ def teacher_dashboard_data(request):
                 "question": a.question.text,
                 "answer": a.text_answer,
                 "score": a.attempt.score,
-                "submitted_at": datetime.date(a.attempt.submitted_at),
+                "submitted_at": a.attempt.submitted_at.strftime("%Y-%m-%d %H:%M"),
             }
             for a in grade_page
         ],
         "pagination": {
+            "quiz_page_number": quiz_page.number,
             "quiz_num_pages": quiz_page.paginator.num_pages,
+            "notif_page_number": notif_page.number,
             "notif_num_pages": notif_page.paginator.num_pages,
-            "logs_num_pages": logs_page.paginator.num_pages,
+            "broadcast_page_number": broadcast_page.number,
+            "broadcast_num_pages": broadcast_page.paginator.num_pages,
+            "grade_page_number": grade_page.number,
             "grade_num_pages": grade_page.paginator.num_pages,
-        }
+        },
     }
-    
     return JsonResponse(data)
 
+
+    teacher = request.user
+    quiz_page = int(request.GET.get("page", 1))
+    notif_page = int(request.GET.get("notif_page", 1))
+    grade_page = int(request.GET.get("grade_page", 1))
+    broadcast_page = int(request.GET.get("broadcast_page", 1))
+
+    # --- Base Querysets ---
+    quizzes = Quiz.objects.filter(created_by=teacher).order_by("-created_at")
+    notifications = Notification.objects.filter(recipient=teacher).order_by("-created_at")
+    broadcasts = Broadcast.objects.filter(sender=teacher).order_by("-created_at")
+    grading = StudentQuizAttempt.objects.filter(
+        quiz__created_by=teacher, graded=False
+    ).order_by("-attempted_at")
+
+    # --- Paginate ---
+    def paginate(queryset, page_num, per_page=5):
+        paginator = Paginator(queryset, per_page)
+        page = paginator.get_page(page_num)
+        return {
+            "items": list(page.object_list.values()),
+            "page_number": page.number,
+            "num_pages": paginator.num_pages,
+            "has_next": page.has_next(),
+            "has_prev": page.has_previous(),
+        }
+
+    paginated_quizzes = paginate(quizzes, quiz_page)
+    paginated_notifications = paginate(notifications, notif_page)
+    paginated_broadcasts = paginate(broadcasts, broadcast_page)
+    paginated_grading = paginate(grading, grade_page)
+
+    # --- Summary Example ---
+    summary = {
+        "teacher": teacher.username,
+        "student_class": getattr(teacher, "assigned_class", "N/A"),
+        "my_class_quizzes": quizzes.count(),
+        "total_quizzes": Quiz.objects.count(),
+        "my_quizzes": quizzes.count(),
+        "attempts": StudentQuizAttempt.objects.filter(quiz__created_by=teacher).count(),
+        "objectives": 0,
+        "pended": grading.count(),
+        "graded": StudentQuizAttempt.objects.filter(quiz__created_by=teacher, graded=True).count(),
+        "total_students": 0,
+    }
+
+    return JsonResponse({
+        "summary": summary,
+        "quizzes": paginated_quizzes["items"],
+        "notifications": paginated_notifications["items"],
+        "broadcasts": paginated_broadcasts["items"],
+        "grading": paginated_grading["items"],
+        "pagination": {
+            "quiz_page_number": paginated_quizzes["page_number"],
+            "quiz_num_pages": paginated_quizzes["num_pages"],
+            "notif_page_number": paginated_notifications["page_number"],
+            "notif_num_pages": paginated_notifications["num_pages"],
+            "broadcast_page_number": paginated_broadcasts["page_number"],
+            "broadcast_num_pages": paginated_broadcasts["num_pages"],
+            "grade_page_number": paginated_grading["page_number"],
+            "grade_num_pages": paginated_grading["num_pages"],
+        },
+    })
 
 # ============================
 # Teacher Broadcast
@@ -506,7 +549,7 @@ def teacher_broadcast(request):
         return JsonResponse({"error": "Invalid audience"}, status=400)
 
     for r in recipients:
-        Notification.objects.create(recipient=r, message=message)
+        Notification.objects.create(sender=request.user, recipient=r, message=message)
 
     ActionLog.objects.create(
         user=request.user,
@@ -540,9 +583,9 @@ def grade_answer(request):
         answer = get_object_or_404(Answer, id=answer_id)
 
         # update grading
-        answer.score = score
+        answer.obtained_marks = answer.attempt.score 
         answer.feedback = feedback
-        answer.graded = True
+        answer.is_pending = False
         answer.graded_at = timezone.now()
         answer.graded_by = request.user
         answer.save()
@@ -568,69 +611,13 @@ def grade_answer(request):
     return JsonResponse({"error": "Invalid request"}, status=400)
 
 
-# @login_required
-# @user_passes_test(is_teacher)
-# def grade_answer(request, answer_id):
-#     """Grade a student's subjective answer"""
-#     if request.method != "POST":
-#         return JsonResponse({"error": "Invalid request"}, status=400)
-
-#     answer = get_object_or_404(Answer, id=answer_id)
-#     marks = float(request.POST.get("marks", 0))
-#     feedback = request.POST.get("feedback", "")
-
-#     answer.obtained_marks = marks
-#     answer.feedback = feedback
-#     answer.graded_by = request.user
-#     answer.graded_at = timezone.now()
-#     answer.is_pending = False
-#     answer.save()
-
-#     # Notify student
-#     Notification.objects.create(
-#         recipient=answer.attempt.student,
-#         message=f"Your answer for '{answer.question.text}' was graded: {marks} marks."
-#     )
-
-#     # Log grading
-#     ActionLog.objects.create(
-#         user=request.user,
-#         action_type="Graded Answer",
-#         model_name="Answer",
-#         object_id=str(answer.id),
-#         details={
-#             "student": answer.attempt.student.username,
-#             "quiz": answer.attempt.quiz.title,
-#             "marks": marks,
-#         },
-#     )
-
-#     return JsonResponse({"success": True, "message": "Answer graded."})
-
-
-
-@login_required
-@require_POST
-def mark_notification_read(request, notif_id):
-    notif = get_object_or_404(Notification, id=notif_id, user=request.user)
-    notif.is_read = True
-    notif.save()
-
-    return JsonResponse({
-        "success": True,
-        "notif_id": notif.id,
-        "message": "Notification marked as read."
-    })
-
-
-
 # ----------------- STUDENT REVIEW  on teacher dashboard-------------------
 @login_required
 @user_passes_test(is_teacher)
 def student_review(request, student_id):
     student = get_object_or_404(User, id=student_id, role="student")
     attempts = StudentQuizAttempt.objects.filter(student=student).select_related("quiz")
-    return render(request, "teacher/student_review.html", {"student": student, "attempts": attempts})
+    return render(request, "exam/quick_review.html", {"student": student, "attempts": attempts})
 
 
 
@@ -657,56 +644,57 @@ def approve_retake(request, quiz_id, student_id):
 @login_required
 @user_passes_test(is_teacher)
 def broadcast_message(request):
+    """
+    Allows a teacher to send broadcast messages to students in their classes or admins.
+    """
     if request.method == "POST":
-        message = request.POST.get("message")
-        students = User.objects.filter(role="student", school_class__in=request.user.classes.all())
-        for student in students:
-            Notification.objects.create(recipient=student, message=message, sender=request.user, is_broadcast=True, defaults={"role": "student", "created_at": timezone.now()})
+        message = request.POST.get("message", "").strip()
+        audience = request.POST.get("audience", "students")
 
-        ActionLog.objects.create(user=request.user, action="Broadcast Message", model_name="BroadcastMessage", object_id=str(request.user.id))
-        return JsonResponse({"success": True})
-    return JsonResponse({"error": "Invalid request"}, status=400)
+        if not message:
+            return JsonResponse({"error": "Message cannot be empty."}, status=400)
 
-
-
-def teacher_broadcast(request):
-    """Teacher sends broadcast notifications to admins, students, or all."""
-    if request.method == "POST":
-        message = request.POST.get("message")
-        target = request.POST.get("target")  # admins | students | all
-
-        if not message or not target:
-            return JsonResponse({"ok": False, "error": "Message and target required."})
-
-        # recipients
-        if target == "admins":
-            recipients = User.objects.filter(role="admin")
-        elif target == "students":
-            recipients = User.objects.filter(role="student", student_class__in=request.user.classroom_set.all())
-        else:  # all
-            recipients = User.objects.filter(role__in=["admin", "student"])
-
-        # create notifications
-        notifications = [
-            Notification(
-                user=r,
-                message=f"📢 {message}",
-                created_at=timezone.now(),
-                is_read=False,
+        if audience == "students":
+            # Send to students in teacher's class
+            students = User.objects.filter(
+                role="student", school_class__in=request.user.classes.all()
             )
-            for r in recipients
-        ]
-        Notification.objects.bulk_create(notifications)
+        elif audience == "admin":
+            students = User.objects.filter(role="admin")
+        else:
+            return JsonResponse({"error": "Invalid audience."}, status=400)
 
-        # log action
-        log_action(request.user, f"Broadcasted to {target}: {message}")
+        for student in students:
+            Notification.objects.create(
+                recipient=student,
+                sender=request.user,
+                message=message,
+                is_broadcast=True,
+                role="student" if audience == "students" else "admin",
+                created_at=timezone.now()
+            )
 
-        return JsonResponse({"ok": True, "message": f"Broadcast sent to {target}"})
+        ActionLog.objects.create(
+            user=request.user,
+            action="Broadcast Message",
+            model_name="Notification",
+            object_id=str(request.user.id)
+        )
 
-    return JsonResponse({"ok": False, "error": "Invalid request"})
+        return JsonResponse({"success": True, "message": "Broadcast sent successfully!"})
+    return JsonResponse({"error": "Invalid request method."}, status=400)
 
 
-
+# ----------------- MARK NOTIFICATION READ -------------------
+@login_required
+def mark_notification_read(request, notification_id):
+    """
+    Marks a specific notification as read.
+    """
+    notif = get_object_or_404(Notification, id=notification_id, recipient=request.user)
+    notif.is_read = True
+    notif.save()
+    return JsonResponse({"success": True})
 
 # ----------------- DOWNLOAD REPORTS -------------------
 @login_required
@@ -761,15 +749,6 @@ def download_quiz_report(request, quiz_id):
     response["Content-Disposition"] = f'attachment; filename="quiz_{quiz.id}_report.pdf"'
     return response
 
-# ----------------- MARK NOTIFICATION READ -------------------
-@login_required
-def mark_notification_read(request, notification_id):
-    notif = get_object_or_404(Notification, id=notification_id, user=request.user)
-    notif.is_read = True
-    notif.save()
-    return JsonResponse({"success": True})
-
-
 # ----------------------Teacher dashboard data endpoint (JSON) (for AJAX refresh)-------------------------#
 
 
@@ -818,7 +797,7 @@ def student_dashboard_data(request):
     notif_p = Paginator(notif_qs, notif_page_size)
     notif_page_obj = notif_p.get_page(notif_page)
     notifications = [
-        {"id": n.id, "message": n.message, "is_read": n.is_read, "created_at": n.created_at.isoformat()}
+        {"id": n.id, "message": n.message, "is_read": n.is_read, "created_at": datetime.date(n.created_at)}
         for n in notif_page_obj
     ]
     notif_meta = {"page": notif_page_obj.number, "pages": notif_p.num_pages, "total": notif_p.count}
@@ -842,7 +821,7 @@ def student_dashboard_data(request):
     else:
         available_qs = Quiz.objects.filter(
         school_class__name=student_class,
-        is_published=True,
+        is_published=True, 
         end_time__gte=now 
         ).order_by("-created_at")
 
@@ -863,17 +842,18 @@ def student_dashboard_data(request):
         already_submitted = StudentQuizAttempt.objects.filter(student=student, quiz=q, is_submitted=True).exists()
         student_retake_override = bool(last_attempt and getattr(last_attempt, "retake_allowed", False))
         allow_retake_global = getattr(q, "allow_retake", False) if hasattr(q, "allow_retake") else False
+        
         # Added lately for great UI/UX. 
         latest_request = RetakeRequest.objects.filter(student=request.user, quiz=q).last()
         retake_status = latest_request.status if latest_request else None
-
+        
         quizzes_data.append({
             "id": q.id,
             "title": q.title,
             "subject": q.subject.name if q.subject else "",
             "class_name": q.subject.school_class.name if (q.subject and q.subject.school_class) else "",
-            "start_time": q.start_time.isoformat() if q.start_time else None,
-            "end_time": q.end_time.isoformat() if q.end_time else None,
+            "start_time": datetime.date(q.start_time) if q.start_time else None,
+            "end_time": datetime.date(q.end_time) if q.end_time else None,
             "duration_minutes": getattr(q, "duration_minutes", None),
             "is_published": bool(q.is_published),
             "allow_retake": bool(allow_retake_global),
@@ -922,8 +902,9 @@ def student_dashboard_data(request):
 
         past_attempts.append({
             "attempt_id": a.id,
+            "quiz_id": a.quiz.id,
             "quiz": a.quiz.title if a.quiz else "",
-            "score": float(a.score or obtained),
+            "score": float(a.score),
             "obtained_marks": obtained,
             "total_marks": total_marks,
             "pending_subjectives": pending_subjectives_count,
@@ -933,7 +914,7 @@ def student_dashboard_data(request):
             "wrong_answer": wrong_review,
             "retake_count": getattr(a, "retake_count", 0),
         })
-
+    
     attempts_meta = {"page": ap_obj.number, "pages": ap.num_pages, "total": ap.count}
 
     # ---------------- Leaderboard (top 10 students) ----------------
@@ -987,6 +968,9 @@ def student_dashboard_data(request):
     })
 
 
+
+
+#------------------------------------------------------------------------
 @require_POST
 @login_required
 @user_passes_test(is_student)
@@ -1260,7 +1244,7 @@ def class_subject_crud(request):
 # ---- QUIZ MANAGEMENT ----
 @login_required
 @user_passes_test(is_admin)
-def manage_quizzes(request):
+def manage_quizzes_admin(request):
     quizzes = Quiz.objects.all().order_by("-created_at")
 
     page = Paginator(quizzes, 7)
@@ -1272,7 +1256,7 @@ def manage_quizzes(request):
 @login_required
 @user_passes_test(is_teacher_or_admin)
 def manage_quizzes_teacher(request):
-    quizzes = Quiz.objects.filter(school_class=request.user.student_class, created_by=request.user).order_by("-created_at")
+    quizzes = Quiz.objects.filter(created_by=request.user).order_by("-created_at")
 
     page = Paginator(quizzes, 7)
     page_number = request.GET.get("page")
@@ -1407,14 +1391,13 @@ def get_quizzes_with_status(student):
 @login_required
 @user_passes_test(is_admin_or_superadmin)
 def retake_requests_list(request):
-    creator = User.objects.filter(role__in=['superadmin', 'admin', 'teacher']).first()
-    quizzes = Quiz.objects.filter(created_by=creator).order_by("-start_time")
-
+    quizzes = Quiz.objects.all().order_by("-end_time")
     retake_requests = (
         RetakeRequest.objects.filter(quiz__in=quizzes)
         .select_related("student", "quiz", "reviewed_by")
         .order_by("-created_at")
     )
+    r = RetakeRequest.objects.all()
 
     # 🔍 Apply search filter
     q = request.GET.get("q", "").strip()
@@ -1434,7 +1417,6 @@ def retake_requests_list(request):
     return render(request, "exams/admin_retake_requests.html", {"page_obj": page_obj})
 
 
-
 @login_required
 @user_passes_test(is_admin_or_superadmin)
 def handle_retake_request(request, request_id):
@@ -1442,7 +1424,6 @@ def handle_retake_request(request, request_id):
     decision = request.POST.get("decision")  # "approve" or "deny"
 
     if decision == "approve":
-        # reset attempt or allow new
         attempt, created = StudentQuizAttempt.objects.get_or_create(
             student=retake_req.student,
             quiz=retake_req.quiz,
@@ -1464,9 +1445,8 @@ def handle_retake_request(request, request_id):
 
     retake_req.reviewed_by = request.user
     retake_req.reviewed_at = timezone.now()
-    retake_req.save()
+    retake_req.save(update_fields=["status", "reviewed_by", "reviewed_at"])
 
-    # log
     ActionLog.objects.create(
         user=request.user,
         action_type=f"Retake {retake_req.status.capitalize()}",
@@ -1475,49 +1455,14 @@ def handle_retake_request(request, request_id):
         details={"student": retake_req.student.username, "exam": retake_req.quiz.title}
     )
 
-    # notify student
-    Notification.objects.create(sender= request.user, recipient=retake_req.student, role='admin', message=message)
+    Notification.objects.create(
+        sender=request.user,
+        recipient=retake_req.student,
+        role='admin',
+        message=message
+    )
 
     return JsonResponse({"success": True, "message": message})
-
-
-
-@login_required
-@user_passes_test(is_admin)
-def approve_retake(request, quiz_id, student_id):
-    if request.method != "POST":
-        return JsonResponse({"error": "Invalid request"}, status=400)
-
-    quiz = get_object_or_404(Quiz, id=quiz_id)
-    student = get_object_or_404(User, id=student_id, role="student")
-
-    # find last attempt or create a fresh one
-    attempt, created = StudentQuizAttempt.objects.get_or_create(
-        student=student, quiz=quiz,
-        defaults={"retake_allowed": True, "is_submitted": False}
-    )
-
-    # mark retake
-    attempt.retake_allowed = True
-    attempt.is_submitted = False  # reset if admin wants them to take again
-    attempt.end_time = None
-    attempt.retake_count += 1
-    attempt.save()
-
-    # log the action
-    ActionLog.objects.create(
-        user=request.user,
-        action_type="Approved Retake",
-        model_name="StudentQuizAttempt",
-        object_id=str(attempt.id),
-        details={"student": student.username, "exam": quiz.title, "retake_count": attempt.retake_count},
-    )
-
-    return JsonResponse({
-        "success": True,
-        "message": f"{student.username} can now retake {quiz.title}.",
-        "retake_count": attempt.retake_count
-    })
 
 
 # -----------------------------Retake Approval & Request ended ---------------------------------#
@@ -1901,7 +1846,7 @@ def import_quiz_excel(request):
         try:
             s = str(v)
             if "T" in s: s = s.replace("T"," ")
-            return timezone.make_aware(datetime.strptime(s, "%Y-%m-%d %H:%M"))
+            return timezone.make_aware(datetime.strptime(s, "%d-%m-%Y %H:%M"))
         except Exception:
             try:
                 return timezone.make_aware(datetime.fromisoformat(str(v)))
@@ -1911,7 +1856,7 @@ def import_quiz_excel(request):
     st = parse_dt_obj(start_time_s)
     et = parse_dt_obj(end_time_s)
     if not st or not et:
-        return JsonResponse({"ok": False, "error": "Invalid start_time or end_time in metadata. Use 'YYYY-MM-DD HH:MM' or Excel datetime."}, status=400)
+        return JsonResponse({"ok": False, "error": "Invalid start_time or end_time in metadata. Use 'DD-MM-YYYY HH:MM' or Excel datetime."}, status=400)
 
     # find header row (we expect header at row 9 or row with 'question_text')
     header_row = None
@@ -2227,7 +2172,7 @@ def download_excel_template(request):
     ws.title = "ExamTemplate"
 
     # metadata rows
-    ws['A1'] = 'exam_title'; ws['B1'] = settings.SCHOOL_NAME + " " + "FIRST TERM EXAM"
+    ws['A1'] = 'exam_title'; ws['B1'] = "FIRST TERM EXAM 2025/2026 SESSION" 
     ws['A2'] = 'class_name'; ws['B2'] = 'JSS1'
     ws['A3'] = 'subject_name'; ws['B3'] = 'Mathematics'
     ws['A4'] = 'start_time'; ws['B4'] = now
@@ -2769,7 +2714,7 @@ def review_attempt_view(request, attempt_id):
 
 @login_required
 @require_POST
-def request_retake_view(request, quiz_id):
+def student_request_retake_view(request, quiz_id):
     """
     Student requests retake: creates RetakeRequest and notifies teacher + admins.
     """
@@ -2777,6 +2722,7 @@ def request_retake_view(request, quiz_id):
         return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
 
     quiz = get_object_or_404(Quiz, id=quiz_id)
+  
 
     # Get reason (from JSON body or POST)
     reason = ""
@@ -2809,7 +2755,7 @@ def request_retake_view(request, quiz_id):
         Notification.objects.create(
             sender=request.user,
             recipient=a,
-            message=f"Retake request by {request.user.get_full_name()} for {quiz.title}",
+            message=f"Retake request by {request.user.get_full_name()} for {quiz.title} {quiz.school_class}",
             role="admin",
             is_broadcast=False,
         )
@@ -2825,48 +2771,4 @@ def request_retake_view(request, quiz_id):
     )
 
     return JsonResponse({"ok": True, "message": "Retake request sent."})
-
-
-@login_required
-@require_POST
-def approve_request_retake_view(request, req_id):
-    """
-    Teacher/admin approves a retake request. This sets the last attempt.retake_allowed True (or creates one)
-    and notifies the student.
-    """
-    if not is_teacher_or_admin(request.user):
-        return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
-
-    rr = get_object_or_404(RetakeRequest, id=req_id)
-    if rr.status == "approved":
-        return JsonResponse({"ok": False, "error": "Already approved"}, status=400)
-
-    rr.status = "approved"
-    rr.reviewed_at = timezone.now()
-    rr.reviewed_by = request.user
-    rr.save(update_fields=["status", "reviewed_at", "reviewed_by"])
-
-    # grant retake: find last attempt and mark retake_allowed True. If none, create a new attempt with retake_allowed True
-    last_attempt = StudentQuizAttempt.objects.filter(student=rr.student, quiz=rr.quiz).order_by("-started_at").first()
-    if last_attempt:
-        last_attempt.retake_allowed = True
-        last_attempt.save(update_fields=["retake_allowed"])
-    else:
-        # create a new empty attempt flagged retake_allowed so student can start
-        new_attempt = StudentQuizAttempt.objects.create(
-            student=rr.student,
-            quiz=rr.quiz,
-            started_at=timezone.now(),
-            end_time=timezone.now() + timezone.timedelta(minutes=rr.quiz.duration_minutes),
-            is_submitted=False,
-            retake_allowed=True,
-            retake_count=0,
-            score=0.0
-        )
-
-    # notify student
-    Notification.objects.create(sender=request.user, recipient=rr.student, message=f"Your retake request for '{rr.quiz.title}' has been approved.", role="student", is_broadcast=False)
-    ActionLog.objects.create(user=request.user, action_type="approved", description="Approved retake", model_name="RetakeRequest", object_id=str(rr.id), details={"student": rr.student.username, "quiz": rr.quiz.title})
-
-    return JsonResponse({"ok": True, "message": "Retake approved and student notified."})
 

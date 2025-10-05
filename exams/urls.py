@@ -27,12 +27,11 @@ urlpatterns = [
     # Quiz management
     path("admin/quizzes/create/", views.create_quiz, name="create_quiz"),
     path("admin/manage/quizzes/", views.manage_quizzes_redirect, name="manage_quizzes"),
-    path("admin/manage/quizzes/admin", views.manage_quizzes, name="manage_quizzes_admin"),
+    path("admin/manage/quizzes/admin", views.manage_quizzes_admin, name="manage_quizzes_admin"),
     path("api/search_quizzes/", views.search_quizzes, name="search_quizzes"),
     path("admin/quizzes/upload-excel/", views.upload_quiz_excel, name="upload_quiz_excel"),
     path("admin/retake-requests/", views.retake_requests_list, name="retake_requests_list"),
     path("admin/retake-request/<int:request_id>/", views.handle_retake_request, name="handle_retake_request"),
-    path("approve-retake/<int:quiz_id>/<int:student_id>/", views.approve_retake, name="approve_retake"),
 
     # Admin dashboard and retake requests from students
     path("admin/dashboard/", views.admin_dashboard, name="admin_dashboard"),
@@ -59,12 +58,11 @@ urlpatterns = [
 
     # Teacher approval and settings, notification and broadcast
     path("teacher/student/<int:student_id>/review/", views.student_review, name="student_review"),
-    path("teacher/retake/<int:quiz_id>/<int:student_id>/", views.approve_retake, name="approve_retake"),
     path("teacher/broadcast/", views.broadcast_message, name="broadcast_message"),
     path("teacher/download/student/<int:student_id>/", views.download_student_report, name="download_student_report"),
     path("teacher/download/quiz/<int:quiz_id>/", views.download_quiz_report, name="download_quiz_report"),
+    path("teacher/broadcast/", views.broadcast_message, name="teacher_broadcast"),
     path("notifications/mark-read/<int:notification_id>/", views.mark_notification_read, name="mark_notification_read"),
-    path("broadcast/", views.teacher_broadcast, name="teacher_broadcast"),
 
     # Teacher report (all students in a quiz)
     path("reports/quiz/<int:quiz_id>/", views.download_closed_quiz_report, name="download_closed_quiz_report"),
@@ -94,14 +92,10 @@ urlpatterns = [
     path('attempt/<int:attempt_id>/review/', views.review_attempt_view, name='review_attempt'),
 
     # student requests retake
-    path("quiz/<int:quiz_id>/request-retake/", views.request_retake_view, name="request_retake"),
+    path("quiz/<int:quiz_id>/request-retake/", views.student_request_retake_view, name="request_retake"),
   
-    # admin/teacher approves retake request (POST)
-    # path('retake-request/<int:req_id>/approve/', views.approve_request_retake_view, name='approve_retake_request'),
-
     path("quizzes/details/<int:quiz_id>/", views.quiz_details_page, name="quiz_details_page"),
     path("quiz/<int:quiz_id>/closed/", views.quiz_closed, name="quiz_closed_detail"),
-
 
     # API endpoints used by fetch in the template
     path('api/student/notifications/unread/', views.api_notifications_unread, name='api_notifications_unread'),

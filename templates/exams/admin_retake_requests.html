@@ -3,11 +3,11 @@
 
 {% block content %}
 <div class="container mt-4">
-  <div class="d-flex justify-content-between align-item-center mb-3">         
-    <h2 class='fw-bold mb-3'> 📌 Retake Requests </h2>
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="fw-bold mb-3">📌 Retake Requests</h2>
     <div>
-        <a class="btn btn-success" style="width: 160px; height: 45px;font-size: 1.1rem;" href="{% url 'manage_quizzes' %}">Manage exam</a>
-        <a class="btn btn-primary" style="width: 140px; height: 45px;font-size: 1.1rem;" href="{% url 'dashboard' %}">Dashboard</a>
+      <a class="btn btn-success" style="width: 160px; height: 45px;font-size: 1.1rem;" href="{% url 'manage_quizzes' %}">Manage Exam</a>
+      <a class="btn btn-primary" style="width: 140px; height: 45px;font-size: 1.1rem;" href="{% url 'dashboard' %}">Dashboard</a>
     </div>
   </div>
 
@@ -16,6 +16,7 @@
     <input type="text" id="search-bar" class="form-control" placeholder="Search by student or quiz..." />
   </div>
 
+  <!-- Requests Table -->
   <div id="requests-container">
     {% include "exams/partials/_retake_requests_table.html" %}
   </div>
@@ -23,31 +24,50 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", function() {
-    // Approve buttons handler
-    function bindApproveButtons() {
-        document.querySelectorAll(".approve-btn").forEach(btn => {
+
+    // Bind action buttons
+    function bindActionButtons() {
+        document.querySelectorAll(".approve-btn, .deny-btn").forEach(btn => {
             btn.addEventListener("click", function() {
                 let reqId = this.getAttribute("data-id");
+                let action = this.classList.contains("approve-btn") ? "approve" : "deny";
+
+                if (action === "deny" && !confirm("Are you sure you want to deny this request?")) {
+                    return;
+                }
 
                 fetch("{% url 'handle_retake_request' 0 %}".replace("0", reqId), {
                     method: "POST",
                     headers: {
+                        "Content-Type": "application/x-www-form-urlencoded",
                         "X-CSRFToken": "{{ csrf_token }}",
                         "X-Requested-With": "XMLHttpRequest"
-                    }
+                    },
+                    body: new URLSearchParams({
+                        decision: action
+                    })
                 })
                 .then(res => res.json())
                 .then(data => {
                     if (data.success) {
                         alert("✅ " + data.message);
                         let row = document.querySelector("#req-" + reqId);
-                        row.querySelector(".badge").classList.remove("bg-warning");
-                        row.querySelector(".badge").classList.add("bg-success");
-                        row.querySelector(".badge").innerText = "approved";
-                        let btn = row.querySelector(".approve-btn");
-                        if (btn) btn.remove();
+                        let badge = row.querySelector(".badge");
+
+                        // Update badge color + text
+                        badge.classList.remove("bg-warning", "bg-success", "bg-danger");
+                        if (action === "approve") {
+                            badge.classList.add("bg-success");
+                            badge.innerText = "approved";
+                        } else {
+                            badge.classList.add("bg-danger");
+                            badge.innerText = "denied";
+                        }
+
+                        // Remove buttons after decision
+                        row.querySelectorAll(".approve-btn, .deny-btn").forEach(b => b.remove());
                     } else {
-                        alert("❌ " + data.error);
+                        alert("❌ " + (data.error || "Something went wrong"));
                     }
                 })
                 .catch(err => console.error(err));
@@ -55,12 +75,12 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 
-    bindApproveButtons();
+    bindActionButtons();
 
-    // Search functionality (AJAX)
+    // AJAX Search
     let searchBar = document.getElementById("search-bar");
     searchBar.addEventListener("input", function() {
-        let query = this.value;
+        let query = this.value.trim();
 
         fetch(`{% url 'retake_requests_list' %}?q=${query}`, {
             headers: { "X-Requested-With": "XMLHttpRequest" }
@@ -68,7 +88,7 @@ document.addEventListener("DOMContentLoaded", function() {
         .then(res => res.text())
         .then(html => {
             document.getElementById("requests-container").innerHTML = html;
-            bindApproveButtons(); // rebind after reload
+            bindActionButtons(); // Rebind after reload
         });
     });
 });

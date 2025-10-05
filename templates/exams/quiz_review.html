@@ -22,17 +22,17 @@
           <p><strong>Your answer:</strong>
             {% if ans.question.question_type == 'objective' %}
                 {% if ans.selected_choice %}
-                  {{ ans.selected_choice.text }}
+                  {{ ans.selected_choice.text }} </p>
+                  <p><strong>Marks awarded:</strong> {{ ans.obtained_marks }}</p>
+                  <p><small class="text-muted">Graded by: Autograded</small></p>
                 {% else %}
                     "No answer"
                 {% endif %}
             {% else %}
-              {{ ans.text_answer|default:"No answer" }}
+            <p>{{ ans.text_answer|default:"No answer" }}</p>
+            <p><strong>Feedback:</strong> {{ ans.feedback|default:"-" }}</p>
+            <p><small class="text-muted">Graded by: {{ ans.graded_by }}</small></p>
             {% endif %}
-          </p>
-          <p><strong>Marks awarded:</strong> {{ ans.obtained_marks }}</p>
-          <p><strong>Feedback:</strong> {{ ans.feedback|default:"-" }}</p>
-          <p><small class="text-muted">Graded by: {{ ans.graded_by }}</small></p>
         </div>
       </div>
     {% endfor %}
