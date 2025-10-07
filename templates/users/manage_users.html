@@ -20,6 +20,7 @@
       <tr>
         <th>Username</th>
         <th>Full Name</th>
+        <th>Class</th>
         <th>Email</th>
         <th>Role</th>
         <th>Date Joined</th>
@@ -46,6 +47,7 @@ function loadUsers(page=1, search="") {
           <tr>
             <td>${u.username}</td>
             <td>${u.first_name} ${u.last_name}</td>
+            <td>${u.student_class}</td>
             <td>${u.email}</td>
             <td>${u.role}</td>
             <td>${u.date_joined}</td>

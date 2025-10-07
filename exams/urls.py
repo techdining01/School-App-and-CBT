@@ -51,8 +51,8 @@ urlpatterns = [
     path("teacher/dashboard/data/", views.teacher_dashboard_data, name="teacher_dashboard_data"),
     path("manage/quizzes/teacher/", views.manage_quizzes_teacher, name="manage_quizzes_teacher"),
     path("teacher/broadcast/", views.teacher_broadcast, name="teacher_broadcast"),
-    path("grading/list/", views.grading_list, name="grading_list"),
-    path("teacher/grade/", views.grade_answer, name="grade_answer"),
+    path("teacher/grading/list/", views.grading_list, name="grading_list"),
+    path("teacher/grade/<int:attempt_id>/", views.grade_attempt, name="grade_attempt"),
     path("teacher/notification/<int:notif_id>/read/", views.mark_notification_read, name="mark_notification_read"),
 
 

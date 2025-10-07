@@ -18,7 +18,7 @@ class QuizAdmin(admin.ModelAdmin):
 
 
 class AnswerAdmin(admin.ModelAdmin):
-    list_display = ('attempt', 'question', 'obtained_marks', 'is_pending')
+    list_display = ('attempt', 'question', 'score', 'is_pending')
 
 
 admin.site.register(Class)

@@ -1,0 +1,14 @@
+<form method="post" id="gradeForm">
+  {% csrf_token %}
+  {% for ans in answers %}
+  <div class="border rounded p-3 mb-3">
+    <p><strong>Q{{ forloop.counter }}:</strong> {{ ans.question.text }}</p>
+    <p><strong>Answer:</strong> {{ ans.text_answer }}</p>
+    <label>Score:</label>
+    <input type="number" step="0.5" name="score_{{ ans.id }}" value="{{ ans.score }}" class="form-control w-25">
+  </div>
+  {% empty %}
+  <p>No subjective questions to grade.</p>
+  {% endfor %}
+  <button type="submit" class="btn btn-success w-100">Save Grades</button>
+</form>

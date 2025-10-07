@@ -3,7 +3,7 @@
     <thead>
         <tr>
             <th>Student</th>
-            <th>Quiz</th>
+            <th>Exam</th>
             <th>Requested At</th>
             <th>Reviewed By</th>
             <th>Status</th>
@@ -14,7 +14,7 @@
         {% for rr in page_obj %}
         <tr id="req-{{ rr.id }}">
             <td>{{ rr.student.username }}</td>
-            <td>{{ rr.quiz.title }}</td>
+            <td>{{ rr.quiz.title }} - {{rr.quiz.subject}}</td>
             <td>{{ rr.created_at|date:"d-m-Y H:i" }}</td>
             <td>{{ rr.reviewed_by|default:"—" }}</td>
             <td>

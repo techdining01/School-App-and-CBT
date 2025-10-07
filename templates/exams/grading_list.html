@@ -32,15 +32,9 @@
                     <td>{{ ans.question.text|truncatewords:12 }}</td>
                     <td>{{ ans.text_answer|truncatewords:20 }}</td>
                     <td>
-                        <button class="btn btn-sm btn-primary" 
-                                data-bs-toggle="modal" 
-                                data-bs-target="#gradeModal"
-                                data-id="{{ ans.id }}"
-                                data-student="{{ ans.attempt.student.get_full_name }}"
-                                data-question="{{ ans.question.text }}"
-                                data-answer="{{ ans.text_answer }}">
-                            Grade
-                        </button>
+                        <a href="{% url 'grade_attempt' attempt.id  %}" class="btn btn-sm btn-primary">                               
+                         Grade
+                        </a>
                     </td>
                 </tr>
                 {% endfor %}
@@ -52,40 +46,7 @@
 </div>
 
 <!-- Modal -->
-<div class="modal fade" id="gradeModal" tabindex="-1" aria-labelledby="gradeModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <form method="POST" action="{% url 'grade_answer' %}">
-      {% csrf_token %}
-      <input type="hidden" name="answer_id" id="modalAnswerId">
 
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="gradeModalLabel">Grade Answer</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <p><strong>Student:</strong> <span id="modalStudent"></span></p>
-          <p><strong>Question:</strong> <span id="modalQuestion"></span></p>
-          <p><strong>Answer:</strong></p>
-          <div class="border p-2 mb-3" id="modalAnswer"></div>
-
-          <div class="mb-3">
-            <label for="score" class="form-label">Score</label>
-            <input type="number" name="score" class="form-control" step="1" min="0" required>
-          </div>
-          <div class="mb-3">
-            <label for="feedback" class="form-label">Feedback</label>
-            <textarea name="feedback" class="form-control" rows="3"></textarea>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="submit" class="btn btn-success">Save Grade</button>
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        </div>
-      </div>
-    </form>
-  </div>
-</div>
 
 <script>
 document.addEventListener("DOMContentLoaded", function () {

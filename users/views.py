@@ -28,7 +28,7 @@ def signup_view(request):
                 return redirect(url)
             else:
                 messages.success(request, "Registration successful. Please wait for approval.")
-            return redirect("login")
+            return redirect("dashboard")
     else:
         form = UserRegistrationForm()
     return render(request, 'users/signup.html', {'form': form})
@@ -211,8 +211,8 @@ def load_users(request):
     if search:
         users = users.filter(username__icontains=search) | users.filter(first_name__icontains=search) | users.filter(last_name__icontains=search)
 
-    paginator = Paginator(users, 10)  
-    users_page = paginator.get_page(page)
+    page = Paginator(users, 10)  
+    users_page = page.get_page(request.GET.get('page'))
 
     data = {
         "users": [
@@ -221,6 +221,7 @@ def load_users(request):
                 "username": u.username,
                 'first_name': u.first_name,
                 'last_name': u.last_name,
+                'student_class': str(u.student_class),
                 "email": u.email,
                 "role": u.role,
                 "date_joined": u.date_joined.strftime("%d-%m-%Y %H:%M"),
@@ -229,9 +230,10 @@ def load_users(request):
         ],
         "has_next": users_page.has_next(),
         "has_previous": users_page.has_previous(),
-        "num_pages": paginator.num_pages,
+        "num_pages": page.num_pages,
         "current_page": users_page.number,
     }
+    print(data)
     return JsonResponse(data)
 
 

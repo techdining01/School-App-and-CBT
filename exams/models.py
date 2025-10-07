@@ -74,9 +74,12 @@ class StudentQuizAttempt(models.Model):
     end_time = models.DateTimeField(null=True, blank=True)  # quiz expiry
     is_submitted = models.BooleanField(default=False)  # submitted or not
     submitted_at = models.DateTimeField(auto_now_add=True)
+    score = models.FloatField(default=0.0)  # total score for the attempt
+    total_score =  models.FloatField(default=0.0)
+    graded = models.BooleanField(default=False)
     retake_allowed = models.BooleanField(default=False)  # ✅ admin/superadmin override
     retake_count = models.PositiveIntegerField(default=0)  # how many times student retook
-    score = models.FloatField(default=0.0)  # total score for the attempt
+    is_retake_approved = models.BooleanField(default=False)
     retake_requested = models.BooleanField(default=False)
 
 
@@ -98,9 +101,9 @@ class Answer(models.Model):
     question = models.ForeignKey(Question, on_delete=models.CASCADE)
     selected_choice = models.ForeignKey(Choice, on_delete=models.SET_NULL, null=True, blank=True)
     text_answer = models.TextField(blank=True, null=True)
-    obtained_marks = models.FloatField(default=0.0)
+    score = models.FloatField(default=0.0)
     graded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='graded_answers')
-    graded_at = models.DateTimeField(null=True, blank=True)
+    graded_at = models.DateTimeField(auto_now_add=True)
     feedback = models.TextField(blank=True, null=True)
     is_pending = models.BooleanField(default=True)  # True for subjective until graded
 
@@ -110,7 +113,7 @@ class Answer(models.Model):
         return cls.objects.filter(
             attempt=attempt,
             question__question_type="objective"
-        ).aggregate(total=models.Sum("obtained_marks"))["total"] or 0
+        ).aggregate(total=models.Sum("score"))["total"] or 0
 
     @classmethod
     def subjective_score(cls, attempt):
@@ -119,7 +122,7 @@ class Answer(models.Model):
             attempt=attempt,
             question__question_type="subjective",
             is_pending=False
-        ).aggregate(total=models.Sum("obtained_marks"))["total"] or 0
+        ).aggregate(total=models.Sum("score"))["total"] or 0
 
     @classmethod
     def total_score(cls, attempt):

@@ -49,7 +49,7 @@
       <!-- Available Quizzes -->
       <div class="card mb-3">
         <div class="card-header d-flex justify-content-between">
-          <strong>📝 Available Quizzes</strong>
+          <strong>📝 Available Exams</strong>
           <small>auto-refresh</small>
         </div>
         <div class="card-body" id="quizzes-area" style="min-height: 120px"></div>
@@ -187,8 +187,8 @@
 
       div.innerHTML = `<div class="d-flex justify-content-between align-items-center">
         <div>
-          <strong>${a.quiz}</strong> ${retakeBadge}<br>
-          <small class="text-muted">Score: ${a.score} • Obtained: ${a.obtained_marks}/${a.total_marks}</small>
+          <strong>${a.quiz} -- ${a.subject}</strong> ${retakeBadge}<br>
+          <small class="text-muted">Score: ${a.score} • Obtained: ${a.score}/${a.total_marks}</small>
         </div>
         <div>
           <a class="btn btn-sm btn-outline-secondary" href="/exams/attempt/${a.attempt_id}/review/">Review</a>
