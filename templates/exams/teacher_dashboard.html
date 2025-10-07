@@ -131,7 +131,7 @@
                     <span class="badge bg-warning text-dark">Pending</span>
                     {% endif %}
                   </td>
-                  <td>{{ attempt.created_at|date:"M d, Y H:i" }}</td>
+                  <td>{{ attempt.submitted_at|date:"M d, Y H:i" }}</td>
                   <td>
                     {% if not attempt.graded %}
                     <button class="btn btn-sm btn-primary grade-btn"

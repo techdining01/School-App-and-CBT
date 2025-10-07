@@ -564,7 +564,7 @@ def grade_attempt(request, attempt_id):
             "answers": answers,
         })
 
-    return render(request, "exams/grading_attempt.html", {
+    return render(request, "exams/teacher_dashboard.html", {
         "attempt": attempt,
         "answers": answers,
     })
