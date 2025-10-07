@@ -351,8 +351,10 @@ def is_teacher(user):
 @user_passes_test(is_teacher_or_admin)
 def teacher_dashboard(request):
     """Render teacher dashboard page"""
-    return render(request, "exams/teacher_dashboard.html")
-
+    teacher = request.user
+    attempts = StudentQuizAttempt.objects.select_related('quiz', 'student').order_by('-id')
+    
+    return render(request, "exams/teacher_dashboard.html", {"attempts": attempts})
 
 @login_required
 @user_passes_test(is_teacher_or_admin)
@@ -463,7 +465,7 @@ def teacher_dashboard_data(request):
             "grade_num_pages": grade_page.paginator.num_pages,
         },
     }
-    print(data['grading'][0]['total_score'])
+    
     return JsonResponse(data)
 
 
@@ -519,8 +521,8 @@ def grading_list(request):
     return render(request, "exams/grading_list.html", {"answers": ungraded_answers, 'attempt': attempt})
 
 
-
-from django.db.models import Sum
+@login_required
+@user_passes_test(is_teacher_or_admin)
 def grade_attempt(request, attempt_id):
     attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id)
     answers = Answer.objects.filter(attempt=attempt, question__question_type='subjective')
@@ -545,32 +547,17 @@ def grade_attempt(request, attempt_id):
         attempt.graded = True
         attempt.save()
 
-        # Log and notify
-        ActionLog.objects.create(
-            user=request.user,
-            action_type='Grade',
-            description=f'Graded quiz: {attempt.quiz.title}',
-            model_name='Answer',
-            object_id=str(attempt.id),
-            details=f"Total score: {attempt.total_score}"
-        )
-
-        Notification.objects.create(
-            sender=request.user,
-            recipient=attempt.student,
-            message=f"Your quiz '{attempt.quiz.title}' has been graded. Score: {attempt.total_score}",
-        )
-
         if request.headers.get("x-requested-with") == "XMLHttpRequest":
             return JsonResponse({
                 "success": True,
-                "message": f"✅ Grading saved. Total score = {total_score}"
+                "message": f"Grading completed. Total score = {total_score}",
+                "total_score": total_score
             })
 
         messages.success(request, "✅ Grading completed successfully!")
-        return redirect("teacher_dashboard_data")
+        return redirect("teacher_dashboard")
 
-    # AJAX partial (modal content)
+    # If modal load (AJAX)
     if request.headers.get("x-requested-with") == "XMLHttpRequest":
         return render(request, "exams/partials/grade_form.html", {
             "attempt": attempt,
@@ -581,6 +568,7 @@ def grade_attempt(request, attempt_id):
         "attempt": attempt,
         "answers": answers,
     })
+
 
 
 

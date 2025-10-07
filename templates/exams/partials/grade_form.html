@@ -1,14 +1,28 @@
-<form method="post" id="gradeForm">
+<form id="gradeForm" data-attempt-id="{{ attempt.id }}">
   {% csrf_token %}
-  {% for ans in answers %}
-  <div class="border rounded p-3 mb-3">
-    <p><strong>Q{{ forloop.counter }}:</strong> {{ ans.question.text }}</p>
-    <p><strong>Answer:</strong> {{ ans.text_answer }}</p>
-    <label>Score:</label>
-    <input type="number" step="0.5" name="score_{{ ans.id }}" value="{{ ans.score }}" class="form-control w-25">
+  <table class="table table-sm">
+    <thead>
+      <tr>
+        <th>Question</th>
+        <th>Student Answer</th>
+        <th>Score</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ans in answers %}
+      <tr>
+        <td style="width:40%">{{ ans.question.text|safe }}</td>
+        <td style="width:45%">{{ ans.text_answer|default:"-" }}</td>
+        <td style="width:15%">
+          <input type="number" step="0.5" min="0" name="score_{{ ans.id }}" class="form-control form-control-sm" value="{{ ans.score }}">
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="3" class="text-center text-muted">No subjective answers.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="text-end">
+    <button type="submit" class="btn btn-success btn-sm">Save Grade</button>
   </div>
-  {% empty %}
-  <p>No subjective questions to grade.</p>
-  {% endfor %}
-  <button type="submit" class="btn btn-success w-100">Save Grades</button>
 </form>

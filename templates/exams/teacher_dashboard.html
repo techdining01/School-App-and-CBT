@@ -98,53 +98,92 @@
         </div>
       </div>
 
-      <!-- Grading -->
-      <div class="card mb-3">
-        <div class="card-header"><strong>✏️ Pending Grading</strong></div>
-        <div class="card-body d-flex justify-content-between  align-items-center" id="grading-area"></div>
+        <!-- Grading -->
+        <div class="card shadow-sm">
+          <div class="card-header bg-warning fw-bold d-flex justify-content-between align-items-center">
+            <span class="fw-semibold">Student Exam Attempts</span>
+            <input type="text" id="searchInput" class="form-control form-control-sm w-25" placeholder="Search student...">
+          </div>
+        </div>
+
+          <div class="table-responsive">
+            <table class="table table-striped mb-0 align-middle" id="attemptsTable">
+              <thead class="table-light">
+                <tr>
+                  <th>Student</th>
+                  <th>Exam</th>
+                  <th>Score</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for attempt in attempts %}
+                <tr id="row-{{ attempt.id }}">
+                  <td>{{ attempt.student.get_full_name }}</td>
+                  <td>{{ attempt.quiz.title }}</td>
+                  <td class="score">{{ attempt.total_score|default:"-" }}</td>
+                  <td class="status">
+                    {% if attempt.graded %}
+                    <span class="badge bg-success">Graded</span>
+                    {% else %}
+                    <span class="badge bg-warning text-dark">Pending</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ attempt.created_at|date:"M d, Y H:i" }}</td>
+                  <td>
+                    {% if not attempt.graded %}
+                    <button class="btn btn-sm btn-primary grade-btn"
+                            data-attempt-id="{{ attempt.id }}"
+                            data-bs-toggle="modal"
+                            data-bs-target="#gradeModal">
+                      Grade
+                    </button>
+                    {% else %}
+                    <span class="text-muted">Done</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <!--Table Pagination  -->
         <div class="card-footer d-flex justify-content-between">
           <button class="btn btn-sm btn-outline-secondary" id="grading-prev">Prev</button>
           <small id="grading-pager"></small>
           <button class="btn btn-sm btn-outline-secondary" id="grading-next">Next</button>
         </div>
-        <div class="card-footer">
-          <a href="{% url 'grading_list' %}" class="btn btn-outline-primary btn-sm w-100">🔗 Go to Grading List</a>
-        </div>
-      </div>
-
-      <!-- Chart -->
+   
+       <!-- Chart -->
       <div class="card mb-3">
         <div class="card-header"><strong>📈 Class Performance</strong></div>
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <div class="card-body"><canvas id="performanceChart" height="120"></canvas></div>
       </div>
 
-      <!-- GRADE MODAL -->
-        <div class="modal fade" id="gradeModal" tabindex="-1" aria-labelledby="gradeModalLabel" aria-hidden="true">
-          <div class="modal-dialog modal-lg modal-dialog-scrollable">
-            <div class="modal-content">
-              <div class="modal-header">
-                <h5 class="modal-title" id="gradeModalLabel">Grade Exam Attempt</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-              </div>
-              <div class="modal-body" id="gradeModalBody">
-                <div class="text-center p-5">
-                  <div class="spinner-border text-primary" role="status"></div>
-                  <p class="mt-2">Loading grading form...</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-      <!-- Leaderboard -->
+        <!-- Leaderboard -->
       <div class="card mb-3">
         <div class="card-header"><strong>🏆 Leaderboard (Top Students)</strong></div>
         <ul id="leaderboard-list" class="list-group list-group-flush"></ul>
       </div>
     </div>
-  </div>
-</div>
+
+        <!-- Modal -->
+        <div class="modal fade" id="gradeModal" tabindex="-1" aria-labelledby="gradeModalLabel" aria-hidden="true">
+          <div class="modal-dialog modal-lg">
+            <div class="modal-content shadow-lg border-0">
+              <div class="modal-header bg-light">
+                <h5 class="modal-title fw-semibold" id="gradeModalLabel">Grade Attempt</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+              </div>
+              <div class="modal-body" id="gradeModalBody">
+                <div class="text-center p-3 text-muted">Loading...</div>
+              </div>
+            </div>
+          </div>
+        </div>
 
 {% block extra_js %}
 <form style="display:none;">{% csrf_token %}</form>
@@ -209,37 +248,89 @@
 
         document.getElementById("broadcast-pager").innerText =
           `Page ${data.pagination.broadcast_page_number} of ${data.pagination.broadcast_num_pages}`;
+         
+document.addEventListener('DOMContentLoaded', function () {
+  const modalBody = document.getElementById('gradeModalBody');
+  const gradeButtons = document.querySelectorAll('.grade-btn');
+  const toastContainer = document.getElementById('toast-container');
 
-             // ✅ FIXED GRADING SECTION
-        const gradingHTML = data.grading.length
-          ? data.grading.map(g => `
-              
-                <strong>${g.quiz}</strong> — ${g.student} (${g.full_name})<br>
-                <small>${g.graded_at}</small><br>
-                <button class="btn btn-sm btn-primary mt-2 grade-btn" data-attempt-id="${g.id}">
-                Grade</button>
-                
-            `).join("")
-          : "<p>No pending grading</p>";
+  // SEARCH FILTER
+  const searchInput = document.getElementById('searchInput');
+  searchInput.addEventListener('keyup', function() {
+    const filter = this.value.toLowerCase();
+    document.querySelectorAll('#attemptsTable tbody tr').forEach(row => {
+      row.style.display = row.textContent.toLowerCase().includes(filter) ? '' : 'none';
+    });
+  });
 
-        document.getElementById("grading-area").innerHTML = gradingHTML;
-        document.getElementById("grading-pager").innerText =
-          `Page ${data.pagination.grade_page_number} of ${data.pagination.grade_num_pages}`;
+  // Open modal & load grading form
+  gradeButtons.forEach(btn => {
+    btn.addEventListener('click', function () {
+      const attemptId = this.dataset.attemptId;
+      modalBody.innerHTML = '<div class="text-center p-3 text-muted">Loading...</div>';
 
-        // 🧠 Attach event listeners dynamically after rendering
-        document.querySelectorAll('.grade-btn').forEach(btn => {
-          btn.addEventListener('click', () => {
-            const attemptId = btn.dataset.attemptId;
-            if (!attemptId) {
-              showToast("Attempt ID missing!", "danger");
-              return;
-            }
-            openGradeModal(attemptId);
-          });
-        });
-      });
+      fetch(`/exams/teacher/grade/${attemptId}/`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      })
+      .then(res => res.text())
+      .then(html => { modalBody.innerHTML = html; })
+      .catch(() => { modalBody.innerHTML = `<div class="text-danger text-center">Error loading form</div>`; });
+    });
+  });
+
+  // AJAX Submit grading form
+  document.addEventListener('submit', function (e) {
+    if (e.target.matches('#gradeForm')) {
+      e.preventDefault();
+      const form = e.target;
+      const formData = new FormData(form);
+      const attemptId = form.dataset.attemptId;
+
+      fetch(`/exams/teacher/grade/${attemptId}/`, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: formData
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          // Close modal
+          const modal = bootstrap.Modal.getInstance(document.getElementById('gradeModal'));
+          modal.hide();
+
+          // Update table dynamically
+          const row = document.getElementById(`row-${attemptId}`);
+          if (row) {
+            row.querySelector('.score').textContent = data.total_score;
+            row.querySelector('.status').innerHTML = '<span class="badge bg-success">Graded</span>';
+            row.querySelector('td:last-child').innerHTML = '<span class="text-muted">Done</span>';
+          }
+
+          showToast("✅ " + data.message, "success");
+        } else {
+          showToast("⚠️ Error saving grade", "danger");
+        }
+      })
+      .catch(() => showToast("❌ Network error", "danger"));
+    }
+  });
+
+  // Bootstrap toast feedback
+  function showToast(message, type="info") {
+    const toast = document.createElement('div');
+    toast.className = `toast align-items-center text-bg-${type} border-0 show mb-2`;
+    toast.role = "alert";
+    toast.innerHTML = `
+      <div class="d-flex">
+        <div class="toast-body">${message}</div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+      </div>`;
+    toastContainer.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
   }
-
+});
+  })
+}
   function markNotifRead(id) {
     fetch(`/exams/notifications/mark-read/${id}/`, {
       method: "POST",
@@ -292,53 +383,6 @@
   fetchTeacherDashboard();
   setInterval(fetchTeacherDashboard, 15000);
 </script>
-<script>
-  // 🧩 FUNCTION TO OPEN GRADING MODAL
-  function openGradeModal(attemptId) {
-    const modalBody = document.getElementById("gradeModalBody");
-    modalBody.innerHTML = `
-      <div class="text-center p-5">
-        <div class="spinner-border text-primary" role="status"></div>
-        <p class="mt-2">Loading grading form...</p>
-      </div>`;
 
-    const modal = new bootstrap.Modal(document.getElementById("gradeModal"));
-    modal.show();
-
-    fetch(`/exams/teacher/grade/${attemptId}/`)
-      .then(res => res.text())
-      .then(html => {
-        modalBody.innerHTML = html;
-
-        // ✅ Attach form submission handler
-        const form = modalBody.querySelector("#gradeForm");
-        if (form) {
-          form.addEventListener("submit", e => {
-            e.preventDefault();
-            fetch(`/exams/teacher/grade/${attemptId}/`, {
-              method: "POST",
-              body: new FormData(form),
-              headers: { "X-Requested-With": "XMLHttpRequest" }
-            })
-            .then(res => res.json())
-            .then(data => {
-              if (data.success) {
-                showToast(data.message, "success");
-                modal.hide();
-                fetchTeacherDashboard();
-              } else {
-                showToast("Error saving grades", "danger");
-              }
-            });
-          });
-        }
-      })
-      .catch(() => {
-        modalBody.innerHTML = "<p class='text-danger text-center'>Error loading grading form.</p>";
-      });
-  }
-
-
-</script>
 {% endblock %}
 {% endblock %}
