@@ -18,7 +18,7 @@ class UserRegistrationForm(UserCreationForm):
     class Meta:
         model = User
         fields = ['username', 'first_name', 'last_name', 'email', 'age', 'address', 'date_of_birth',
-                  'role', 'gender', 'student_class', 'profile_picture', 'password1', 'password2']
+                  'role', 'gender', 'student_class', 'phone_number', 'profile_picture', 'password1', 'password2']
         widgets = {
             'username': forms.TextInput(attrs={'class': 'form-control'}),
             'first_name': forms.TextInput(attrs={'class': 'form-control'}),
@@ -30,6 +30,7 @@ class UserRegistrationForm(UserCreationForm):
             'role': forms.Select(attrs={'class': 'form-control'}),
             'gender': forms.Select(attrs={'class': 'form-control'}),
             'student_class': forms.Select(attrs={'class': 'form-control'}),
+            'phone_number': forms.TextInput(attrs={'class': 'form-control'}),
             'profile_picture': forms.ClearableFileInput(attrs={'class': 'form-control-file'}),
             'password1': forms.PasswordInput(attrs={'class': 'form-control'}),
             'password2': forms.PasswordInput(attrs={'class': 'form-control'}),

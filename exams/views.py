@@ -352,8 +352,11 @@ def is_teacher(user):
 def teacher_dashboard(request):
     """Render teacher dashboard page"""
     teacher = request.user
-    attempts = StudentQuizAttempt.objects.select_related('quiz', 'student').order_by('-id')
-    
+    attempts = StudentQuizAttempt.objects.filter(
+        quiz__created_by=teacher, is_submitted=True, graded=False, quiz__school_class=teacher.student_class).select_related(
+            'quiz', 'student').order_by('-submitted_at')
+    print(attempts)
+
     return render(request, "exams/teacher_dashboard.html", {"attempts": attempts})
 
 @login_required
@@ -367,6 +370,12 @@ def teacher_dashboard_data(request):
     notif_page_num = request.GET.get("notif_page", 1)
     grade_page_num = request.GET.get("grade_page", 1)
     broadcast_page_num = request.GET.get("broadcast_page", 1)
+
+    # Attempts
+    teacher = request.user
+    attempts = StudentQuizAttempt.objects.filter(
+        quiz__created_by=teacher, is_submitted=True).select_related(
+            'quiz', 'student').order_by('-submitted_at')
 
     # Quizzes
     quizzes = Quiz.objects.filter(school_class=student_class).annotate(
@@ -383,9 +392,10 @@ def teacher_dashboard_data(request):
     notif_page = Paginator(notifications, 5).get_page(notif_page_num)
 
     # Grading
-    pending_attempts = Answer.objects.filter(
-        attempt__quiz__created_by=teacher, is_pending=True
-    ).order_by("-graded_at")
+    pending_attempts = StudentQuizAttempt.objects.filter(
+        quiz__created_by=teacher, is_submitted=True).select_related(
+            'quiz', 'student').order_by('-submitted_at')
+
     grade_page = Paginator(pending_attempts, 5).get_page(grade_page_num)
 
     # Performance
@@ -398,6 +408,7 @@ def teacher_dashboard_data(request):
     data = {
         "summary": {
             "teacher": teacher.username,
+            "attempts": attempts,
             "student_class": str(student_class),
             "total_quizzes": quizzes.count(),
             "my_quizzes": Quiz.objects.filter(created_by=teacher).count(),
@@ -442,15 +453,14 @@ def teacher_dashboard_data(request):
         "grading": [
             {
                 "id": a.id,
-                "student": a.attempt.student.username,
-                "full_name": a.attempt.student.get_full_name(),
-                "quiz": a.attempt.quiz.title,
-                "quiz_id": a.attempt.quiz.id,
-                "score": a.attempt.score,
-                "total_score": a.attempt.total_score,
-                "is_pending": bool(a.is_pending),
-                "graded_by": a.graded_by,
-                "graded_at": datetime.date(a.graded_at)
+                "student": a.student.username,
+                "full_name": a.student.get_full_name(),
+                "quiz": a.quiz.title,
+                "quiz_id": a.quiz.id,
+                "score": a.score,
+                "total_score": a.total_score,
+                "graded": bool(a.graded),
+                
             }
             for a in grade_page
         ],
@@ -465,7 +475,7 @@ def teacher_dashboard_data(request):
             "grade_num_pages": grade_page.paginator.num_pages,
         },
     }
-    
+    print(data['summary']['attempts'])
     return JsonResponse(data)
 
 
@@ -527,6 +537,10 @@ def grade_attempt(request, attempt_id):
     attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id)
     answers = Answer.objects.filter(attempt=attempt, question__question_type='subjective')
 
+    # helper to robustly detect AJAX
+    def _is_ajax(req):
+        return req.headers.get('X-Requested-With') == 'XMLHttpRequest' or req.META.get('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest'
+
     if request.method == "POST":
         total_subjective = 0
         for ans in answers:
@@ -547,7 +561,7 @@ def grade_attempt(request, attempt_id):
         attempt.graded = True
         attempt.save()
 
-        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+        if _is_ajax(request):
             return JsonResponse({
                 "success": True,
                 "message": f"Grading completed. Total score = {total_score}",
@@ -558,17 +572,16 @@ def grade_attempt(request, attempt_id):
         return redirect("teacher_dashboard")
 
     # If modal load (AJAX)
-    if request.headers.get("x-requested-with") == "XMLHttpRequest":
+    if _is_ajax(request):
         return render(request, "exams/partials/grade_form.html", {
             "attempt": attempt,
             "answers": answers,
         })
 
-    return render(request, "exams/teacher_dashboard.html", {
+    return render(request, "exams/grading_attempt.html", {
         "attempt": attempt,
         "answers": answers,
     })
-
 
 
 
@@ -920,14 +933,13 @@ def student_dashboard_data(request):
             
     quizzes_meta = {"page": qp_obj.number, "pages": qp.num_pages, "total": qp.count}
 
-
+ 
       # ---------------- Summary ----------------
 
-    already_submitted = StudentQuizAttempt.objects.filter(student=student, quiz=q, is_submitted=True).exists()
     total_attempts = StudentQuizAttempt.objects.filter(student=student).count()
     auto_graded_count = Answer.objects.filter(attempt__student=student, is_pending=False).count()
     pending_subjectives = Answer.objects.filter(attempt__student=student, is_pending=True).count()
- 
+
     summary = {
         "total_attempts": total_attempts,
         "auto_graded_count": auto_graded_count,

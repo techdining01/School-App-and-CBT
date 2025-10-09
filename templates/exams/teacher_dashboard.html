@@ -131,7 +131,7 @@
                     <span class="badge bg-warning text-dark">Pending</span>
                     {% endif %}
                   </td>
-                  <td>{{ attempt.submitted_at|date:"M d, Y H:i" }}</td>
+                  <td>{{ attempt.submitted_at|date:"d M, Y H:i" }}</td>
                   <td>
                     {% if not attempt.graded %}
                     <button class="btn btn-sm btn-primary grade-btn"
@@ -249,72 +249,6 @@
         document.getElementById("broadcast-pager").innerText =
           `Page ${data.pagination.broadcast_page_number} of ${data.pagination.broadcast_num_pages}`;
          
-document.addEventListener('DOMContentLoaded', function () {
-  const modalBody = document.getElementById('gradeModalBody');
-  const gradeButtons = document.querySelectorAll('.grade-btn');
-  const toastContainer = document.getElementById('toast-container');
-
-  // SEARCH FILTER
-  const searchInput = document.getElementById('searchInput');
-  searchInput.addEventListener('keyup', function() {
-    const filter = this.value.toLowerCase();
-    document.querySelectorAll('#attemptsTable tbody tr').forEach(row => {
-      row.style.display = row.textContent.toLowerCase().includes(filter) ? '' : 'none';
-    });
-  });
-
-  // Open modal & load grading form
-  gradeButtons.forEach(btn => {
-    btn.addEventListener('click', function () {
-      const attemptId = this.dataset.attemptId;
-      modalBody.innerHTML = '<div class="text-center p-3 text-muted">Loading...</div>';
-
-      fetch(`/exams/teacher/grade/${attemptId}/`, {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
-      })
-      .then(res => res.text())
-      .then(html => { modalBody.innerHTML = html; })
-      .catch(() => { modalBody.innerHTML = `<div class="text-danger text-center">Error loading form</div>`; });
-    });
-  });
-
-  // AJAX Submit grading form
-  document.addEventListener('submit', function (e) {
-    if (e.target.matches('#gradeForm')) {
-      e.preventDefault();
-      const form = e.target;
-      const formData = new FormData(form);
-      const attemptId = form.dataset.attemptId;
-
-      fetch(`/exams/teacher/grade/${attemptId}/`, {
-        method: 'POST',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        body: formData
-      })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          // Close modal
-          const modal = bootstrap.Modal.getInstance(document.getElementById('gradeModal'));
-          modal.hide();
-
-          // Update table dynamically
-          const row = document.getElementById(`row-${attemptId}`);
-          if (row) {
-            row.querySelector('.score').textContent = data.total_score;
-            row.querySelector('.status').innerHTML = '<span class="badge bg-success">Graded</span>';
-            row.querySelector('td:last-child').innerHTML = '<span class="text-muted">Done</span>';
-          }
-
-          showToast("✅ " + data.message, "success");
-        } else {
-          showToast("⚠️ Error saving grade", "danger");
-        }
-      })
-      .catch(() => showToast("❌ Network error", "danger"));
-    }
-  });
-
   // Bootstrap toast feedback
   function showToast(message, type="info") {
     const toast = document.createElement('div');
@@ -329,7 +263,6 @@ document.addEventListener('DOMContentLoaded', function () {
     setTimeout(() => toast.remove(), 4000);
   }
 });
-  })
 }
   function markNotifRead(id) {
     fetch(`/exams/notifications/mark-read/${id}/`, {
@@ -382,6 +315,191 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   fetchTeacherDashboard();
   setInterval(fetchTeacherDashboard, 15000);
+</script>
+
+<script>
+
+(() => {
+  const csrftoken = () => (document.querySelector('[name=csrfmiddlewaretoken]') || {}).value || '';
+  let quizPage = 1, notifPage = 1, gradePage = 1, broadcastPage = 1;
+  const toastContainer = document.getElementById('toast-container');
+
+  const searchInput = document.getElementById('searchInput');
+  searchInput.addEventListener('keyup', function() {
+    const filter = this.value.toLowerCase();
+    document.querySelectorAll('#attemptsTable tbody tr').forEach(row => {
+      row.style.display = row.textContent.toLowerCase().includes(filter) ? '' : 'none';
+    });
+  })
+
+  function attachGradeHandlers() {
+    const modalBody = document.getElementById('gradeModalBody');
+    document.querySelectorAll('.grade-btn').forEach(btn => {
+      // ensure fresh node without duplicate listeners
+      const nb = btn.cloneNode(true);
+      btn.parentNode.replaceChild(nb, btn);
+      nb.addEventListener('click', function () {
+        const attemptId = this.dataset.attemptId;
+        modalBody.innerHTML = '<div class="text-center p-3 text-muted">Loading...</div>';
+        fetch(`/exams/teacher/grade/${attemptId}/`, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(res => {
+          if (!res.ok) throw new Error('Network response was not ok');
+          return res.text();
+        })
+        .then(html => { modalBody.innerHTML = html; })
+        .catch(err => {
+          console.error(err);
+          modalBody.innerHTML = `<div class="text-danger text-center">Error loading form</div>`;
+        });
+      });
+    });
+  }
+
+  // delegated submit handler (works for dynamic form in modal)
+  document.addEventListener('submit', function (e) {
+    if (!e.target.matches('#gradeForm')) return;
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+    const attemptId = form.dataset.attemptId;
+    fetch(`/exams/teacher/grade/${attemptId}/`, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrftoken() },
+      body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        const modalEl = document.getElementById('gradeModal');
+        const bsModal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+        bsModal.hide();
+        const row = document.getElementById(`row-${attemptId}`);
+        if (row) {
+          const scoreCell = row.querySelector('.score');
+          const statusCell = row.querySelector('.status');
+          const actionCell = row.querySelector('td:last-child');
+          if (scoreCell) scoreCell.textContent = data.total_score;
+          if (statusCell) statusCell.innerHTML = '<span class="badge bg-success">Graded</span>';
+          if (actionCell) actionCell.innerHTML = '<span class="text-muted">Done</span>';
+        }
+        showToast("✅ " + (data.message || "Saved"), "success");
+        fetchTeacherDashboard();
+      } else {
+        showToast("⚠️ " + (data.message || "Error saving grade"), "danger");
+      }
+    })
+    .catch(err => { console.error(err); showToast("❌ Network error", "danger"); });
+  });
+
+  // main fetch and DOM update
+  function fetchTeacherDashboard() {
+    fetch(`{% url 'teacher_dashboard_data' %}?page=${quizPage}&notif_page=${notifPage}&grade_page=${gradePage}&broadcast_page=${broadcastPage}`)
+      .then(res => { if (!res.ok) throw new Error('Failed to fetch dashboard data'); return res.json(); })
+      .then(data => {
+        // ...summary/quizzes/notifications rendering unchanged...
+        // Render grading attempts — support server return key "grading"
+        const tbody = document.querySelector('#attemptsTable tbody');
+        if (tbody) {
+          let rowsHtml = '';
+          if (data.attempts_html) {
+            tbody.innerHTML = data.attempts_html;
+          } else if (Array.isArray(data.grading)) {
+            rowsHtml = data.grading.map(attempt => `
+              <tr id="row-${attempt.id}">
+                <td>${attempt.full_name}</td>
+                <td>${attempt.quiz}</td>
+                <td class="score">${attempt.total_score ?? '-'}</td>
+                <td class="status">${attempt.graded ? '<span class="badge bg-success">Graded</span>' : '<span class="badge bg-warning text-dark">Pending</span>'}</td>
+                <td></td>
+                <td>${attempt.graded ? '<span class="text-muted">Done</span>' : `<button class="btn btn-sm btn-primary grade-btn" data-attempt-id="${attempt.id}" data-bs-toggle="modal" data-bs-target="#gradeModal">Grade</button>`}</td>
+              </tr>
+            `).join('');
+            tbody.innerHTML = rowsHtml;
+          }
+        }
+
+        // update pagers...
+        attachGradeHandlers(); // bind handlers to current DOM
+      })
+      .catch(err => { console.error(err); showToast("Failed to load dashboard data", "danger"); });
+  }
+
+  // initial bind for server-rendered buttons
+  attachGradeHandlers();
+  fetchTeacherDashboard();
+  setInterval(fetchTeacherDashboard, 15000);
+})();
+
+
+/*
+  Leaderboard renderer.
+  - Call renderLeaderboard(data.performance) from your fetchTeacherDashboard() after data is received.
+  - Expects an array like: [{ "attempt__student__username": "jdoe", "avg_score": 82.5 }, ...]
+*/
+function renderLeaderboard(performance, containerId = 'leaderboard-list', top = 5) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  // Normalize entries to { name, score }
+  const list = (performance || []).map(p => {
+    const name = p.student_name || p.attempt__student__username || p.attempt__student__username || Object.values(p)[0] || 'Unknown';
+    const score = Number(p.avg_score ?? p.score ?? 0);
+    return { name, score };
+  });
+
+  // Sort desc and take top N
+  list.sort((a,b) => b.score - a.score);
+  const topList = list.slice(0, top);
+
+  // Build HTML
+  if (topList.length === 0) {
+    container.innerHTML = '<li class="list-group-item">No data</li>';
+    return;
+  }
+
+  container.innerHTML = topList.map((item, idx) => {
+    // small progress bar + rank
+    const pct = Math.max(0, Math.min(100, Math.round(item.score)));
+    return `
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+        <div>
+          <strong>${idx+1}. ${escapeHtml(item.name)}</strong>
+          <div class="small text-muted">Avg: ${pct}%</div>
+        </div>
+        <div style="min-width:140px;">
+          <div class="progress" style="height:10px;">
+            <div class="progress-bar" role="progressbar" style="width:${pct}%;" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"></div>
+          </div>
+        </div>
+      </li>`;
+  }).join('');
+}
+
+// small helper to avoid XSS when injecting usernames
+function escapeHtml(str) {
+  if (typeof str !== 'string') return str;
+  return str.replace(/[&<>"'`=\/]/g, function (s) {
+    return ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+      '/': '&#x2F;',
+      '`': '&#x60;',
+      '=': '&#x3D;'
+    })[s];
+  });
+}
+
+// Example: call this inside your fetchTeacherDashboard .then(data => { ... })
+/*
+  // after processing other sections:
+  renderLeaderboard(data.performance);
+*/
+
 </script>
 
 {% endblock %}
