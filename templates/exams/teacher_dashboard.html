@@ -61,6 +61,12 @@
         </div>
       </div>
 
+      <!-- Leaderboard -->
+      <div class="card mb-3">
+        <div class="card-header"><strong>🏆 Leaderboard (Top Students)</strong></div>
+        <ul id="leaderboard-list" class="list-group list-group-flush"></ul>
+      </div>
+      
       <!-- Download Reports -->
       <div class="card mb-3 p-3">
         <a href="#" id="download-class-report" class="btn btn-success w-100">📥 Download Closed Exam Report</a>
@@ -75,6 +81,7 @@
         </div>
       </div>
     </div>
+    
 
     <!-- RIGHT COLUMN -->
     <div class="col-lg-8">
@@ -161,15 +168,11 @@
       <div class="card mb-3">
         <div class="card-header"><strong>📈 Class Performance</strong></div>
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-        <div class="card-body"><canvas id="performanceChart" height="120"></canvas></div>
-      </div>
-
-        <!-- Leaderboard -->
-      <div class="card mb-3">
-        <div class="card-header"><strong>🏆 Leaderboard (Top Students)</strong></div>
-        <ul id="leaderboard-list" class="list-group list-group-flush"></ul>
-      </div>
+        <div class="card-body"><canvas id="performanceChart" height="300"></canvas></div>
+      </div>  
     </div>
+  </div>
+</div>
 
         <!-- Modal -->
         <div class="modal fade" id="gradeModal" tabindex="-1" aria-labelledby="gradeModalLabel" aria-hidden="true">
@@ -190,11 +193,114 @@
 <form style="display:none;">{% csrf_token %}</form>
 <script>
   let quizPage = 1, notifPage = 1, gradePage = 1, broadcastPage = 1;
-  
+  const toastContainer = document.getElementById('toast-container');
+
+  // --- leaderboard renderer (outer scope) ---
+  function escapeHtml(str) {
+    if (typeof str !== 'string') return str;
+    return str.replace(/[&<>"'`=\/]/g, function (s) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '/': '&#x2F;', '`': '&#x60;', '=': '&#x3D;' })[s];
+    });
+  }
+
+  function renderLeaderboard(performance, containerId = 'leaderboard-list', top = 5) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const list = (performance || []).map(p => {
+      const name = p.student_name || p.attempt__student__username || p.full_name || Object.values(p)[0] || 'Unknown';
+      const score = Number(p.avg_score ?? p.total_score ?? p.score ?? 0);
+      return { name, score };
+    });
+    list.sort((a,b) => b.score - a.score);
+    const topList = list.slice(0, top);
+    if (topList.length === 0) { container.innerHTML = '<li class="list-group-item">No data</li>'; return; }
+    container.innerHTML = topList.map((item, idx) => {
+      const pct = Math.max(0, Math.min(100, Math.round(item.score)));
+      return `
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+          <div>
+            <strong>${idx+1}. ${escapeHtml(item.name)}</strong>
+            <div class="small text-muted">Avg: ${pct}%</div>
+          </div>
+          <div style="min-width:140px;">
+            <div class="progress" style="height:10px;">
+              <div class="progress-bar" role="progressbar" style="width:${pct}%;" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"></div>
+            </div>
+          </div>
+        </li>`;
+    }).join('');
+  }
+
+  // --- chart renderer (outer scope) ---
+  let performanceChartInstance = null;
+  function renderPerformanceChart(performance) {
+    const canvas = document.getElementById('performanceChart');
+    if (!canvas) return;
+    const items = (performance || []).map(p => {
+      const name = p.attempt__student__username || p.student || p.student_name || p.full_name || Object.values(p)[0] || 'Unknown';
+      const score = Number(p.avg_score ?? p.total_score ?? p.score ?? 0);
+      return { name, score };
+    });
+    const labels = items.map(i => i.name);
+    const values = items.map(i => i.score);
+    if (performanceChartInstance) {
+      performanceChartInstance.data.labels = labels;
+      performanceChartInstance.data.datasets[0].data = values;
+      performanceChartInstance.update();
+      return;
+    }
+    performanceChartInstance = new Chart(canvas, {
+      type: 'bar',
+      data: { labels, datasets: [{ label: 'Avg score (%)', data: values, backgroundColor: 'rgba(54,162,235,0.6)', borderColor: 'rgba(54,162,235,1)', borderWidth: 1 }]},
+      options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, suggestedMax: 100 } }, plugins: { legend: { display: false } } }
+    });
+  }
+
+   function showToast(message, type="info") {
+    const toast = document.createElement('div');
+    toast.className = `toast align-items-center text-bg-${type} border-0 show mb-2`;
+    toast.role = "alert";
+    toast.innerHTML = `<div class="d-flex"><div class="toast-body">${message}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>`;
+    toastContainer.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+  }
+  // --- mark notification read ---
+  function markNotifRead(id) {
+    fetch(`/exams/notifications/mark-read/${id}/`, {
+      method: "POST",
+      headers: {"X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value}
+    }).then(() => fetchTeacherDashboard());
+  }
+
+    // Broadcast form
+  document.getElementById("broadcast-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    const formData = new FormData(this);
+    fetch("{% url 'teacher_broadcast' %}", {
+      method: "POST",
+      body: formData,
+      headers: {"X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value}
+    }).then(r => r.json()).then(d => {
+      alert(d.message || "Broadcast sent!");
+      fetchTeacherDashboard();
+    });
+  });
+
+  // --- main fetch and DOM update ---
+
   function fetchTeacherDashboard() {
     fetch(`{% url 'teacher_dashboard_data' %}?page=${quizPage}&notif_page=${notifPage}&grade_page=${gradePage}&broadcast_page=${broadcastPage}`)
       .then(res => res.json())
       .then(data => {
+        try { renderLeaderboard(data.performance); } 
+        catch (e) { 
+          console.error('Leaderboard render error', e);
+       }
+        try { renderPerformanceChart(data.performance);
+         } catch (e) { 
+          console.error('Chart render error', e); 
+      }
+
         // Summary
         document.getElementById("summary-area").innerHTML = `
           <div class="row">
@@ -213,121 +319,6 @@
               <p><strong>Students In Class:</strong> ${data.summary.total_students}</p>
             </div>
           </div>`;
-        
-        /*
-          Leaderboard renderer.
-          - Call renderLeaderboard(data.performance) from your fetchTeacherDashboard() after data is received.
-          - Expects an array like: [{ "attempt__student__username": "jdoe", "avg_score": 82.5 }, ...]
-        */
-        function renderLeaderboard(performance, containerId = 'leaderboard-list', top = 5) {
-          const container = document.getElementById(containerId);
-          if (!container) return;
-
-          // Normalize entries to { name, score }
-          const list = (performance || []).map(p => {
-            const name = p.student_name || p.attempt__student__username || p.attempt__student__username || Object.values(p)[0] || 'Unknown';
-            const score = Number(p.avg_score ?? p.score ?? 0);
-            return { name, score };
-          });
-
-          // Sort desc and take top N
-          list.sort((a,b) => b.score - a.score);
-          const topList = list.slice(0, top);
-
-          // Build HTML
-          if (topList.length === 0) {
-            container.innerHTML = '<li class="list-group-item">No data</li>';
-            return;
-          }
-
-          container.innerHTML = topList.map((item, idx) => {
-            // small progress bar + rank
-            const pct = Math.max(0, Math.min(100, Math.round(item.score)));
-            return `
-              <li class="list-group-item d-flex justify-content-between align-items-center">
-                <div>
-                  <strong>${idx+1}. ${escapeHtml(item.name)}</strong>
-                  <div class="small text-muted">Avg: ${pct}%</div>
-                </div>
-                <div style="min-width:140px;">
-                  <div class="progress" style="height:10px;">
-                    <div class="progress-bar" role="progressbar" style="width:${pct}%;" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"></div>
-                  </div>
-                </div>
-              </li>`;
-          }).join('');
-        }
-
-        // small helper to avoid XSS when injecting usernames
-        function escapeHtml(str) {
-          if (typeof str !== 'string') return str;
-          return str.replace(/[&<>"'`=\/]/g, function (s) {
-            return ({
-              '&': '&amp;',
-              '<': '&lt;',
-              '>': '&gt;',
-              '"': '&quot;',
-              "'": '&#39;',
-              '/': '&#x2F;',
-              '`': '&#x60;',
-              '=': '&#x3D;'
-            })[s];
-          });
-        }
-
-      // keep chart instance across updates
-      let performanceChartInstance = null;
-
-      function renderPerformanceChart(performance) {
-        const canvas = document.getElementById('performanceChart');
-        if (!canvas) return;
-
-        // normalize performance array -> [{name, score}]
-        const items = (performance || []).map(p => {
-          const name = p.attempt__student__username || p.student || p.student_name || p.full_name || Object.values(p)[0] || 'Unknown';
-          const score = Number(p.avg_score ?? p.total_score ?? p.score ?? 0);
-          return { name, score };
-        });
-
-        const labels = items.map(i => i.name);
-        const values = items.map(i => i.score);
-
-        // destroy previous chart if canvas was reused incorrectly
-        if (performanceChartInstance) {
-          performanceChartInstance.data.labels = labels;
-          performanceChartInstance.data.datasets[0].data = values;
-          performanceChartInstance.update();
-          return;
-        }
-
-        performanceChartInstance = new Chart(canvas, {
-          type: 'bar',
-          data: {
-            labels,
-            datasets: [{
-              label: 'Avg score (%)',
-              data: values,
-              backgroundColor: 'rgba(54, 162, 235, 0.6)',
-              borderColor: 'rgba(54, 162, 235, 1)',
-              borderWidth: 1
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-              y: { beginAtZero: true, suggestedMax: 100 }
-            },
-            plugins: { legend: { display: false } }
-          }
-        });
-      }
-
-        // Example: call this inside your fetchTeacherDashboard .then(data => { ... })
-        /*
-          // after processing other sections:
-          renderLeaderboard(data.performance);
-        */
 
         // Quizzes
         document.getElementById("quizzes-area").innerHTML =
@@ -380,27 +371,6 @@
   }
 });
 }
-  function markNotifRead(id) {
-    fetch(`/exams/notifications/mark-read/${id}/`, {
-      method: "POST",
-      headers: {"X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value}
-    }).then(() => fetchTeacherDashboard());
-  }
-
-
-    // Broadcast form
-  document.getElementById("broadcast-form").addEventListener("submit", function(e){
-    e.preventDefault();
-    const formData = new FormData(this);
-    fetch("{% url 'teacher_broadcast' %}", {
-      method: "POST",
-      body: formData,
-      headers: {"X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value}
-    }).then(r => r.json()).then(d => {
-      alert(d.message || "Broadcast sent!");
-      fetchTeacherDashboard();
-    });
-  });
 
   // Pagination buttons
   document.getElementById("quizzes-prev").onclick = () => { if (quizPage > 1) quizPage--; fetchTeacherDashboard(); };
@@ -508,12 +478,13 @@
     .catch(err => { console.error(err); showToast("❌ Network error", "danger"); });
   });
 
-  // main fetch and DOM update
+  // main fetch and DOM update 
+  // grading attempts
   function fetchTeacherDashboard() {
     fetch(`{% url 'teacher_dashboard_data' %}?page=${quizPage}&notif_page=${notifPage}&grade_page=${gradePage}&broadcast_page=${broadcastPage}`)
       .then(res => { if (!res.ok) throw new Error('Failed to fetch dashboard data'); return res.json(); })
       .then(data => {
-        // ...summary/quizzes/notifications rendering unchanged...
+      
         // Render grading attempts — support server return key "grading"
         const tbody = document.querySelector('#attemptsTable tbody');
             if (data.attempts_html) {
@@ -539,7 +510,7 @@
         attachGradeHandlers(); // bind handlers to current DOM
       })
       .catch(err => { console.error(err); showToast("Failed to load dashboard data", "danger"); });
-  }
+  } 
 
   // initial bind for server-rendered buttons
   attachGradeHandlers();

@@ -114,15 +114,15 @@ def is_admin(user):
     return user.is_authenticated and user.role in ("admin", "superadmin")
 
 # Admin dashboard page (HTML shell)
-# @login_required
-# @user_passes_test(is_admin)
+@login_required
+@user_passes_test(is_admin)
 def admin_dashboard(request):
     # Render the shell; the dynamic data comes from admin_dashboard_data
     return render(request, "exams/admin_dashboard.html", {})
 
 
 # Admin dashboard data endpoint (GET -> fetch data; POST -> perform actions such as approve/reject/broadcast/download)
-# @login_required
+@login_required
 def admin_dashboard_data(request):
     if request.user.role not in ("admin", "superadmin"):
         return JsonResponse({"error": "forbidden"}, status=403)
@@ -425,8 +425,8 @@ def teacher_dashboard_data(request):
 
     # Performance
     performance = (
-        Answer.objects.filter(attempt__student__student_class=student_class)
-        .values("attempt__student__username")
+        StudentQuizAttempt.objects.filter(student__student_class=student_class)
+        .values("student__username")
         .annotate(avg_score=Avg("score"))
     )
 
@@ -1744,7 +1744,7 @@ def download_student_full_report(request, student_id):
                 ans_text = ans.selected_choice.text
             else:
                 ans_text = ans.text_answer or "-"
-            data.append([ans.question.text, ans_text, ans.obtained_marks, ans.feedback or ""])
+            data.append([ans.question.text, ans_text, ans.score, ans.feedback or ""])
 
         table = Table(data, colWidths=[200, 150, 60, 100])
         table.setStyle(TableStyle([
