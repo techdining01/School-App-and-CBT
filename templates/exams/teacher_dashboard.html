@@ -119,11 +119,11 @@
                 </tr>
               </thead>
               <tbody>
-                {% for attempt in attempts %}
+                {% for attempt in data.grading %}
                 <tr id="row-{{ attempt.id }}">
                   <td>{{ attempt.student.get_full_name }}</td>
                   <td>{{ attempt.quiz.title }}</td>
-                  <td class="score">{{ attempt.total_score|default:"-" }}</td>
+                  <td class="score">{{ attempt.score|default:"-" }}</td>
                   <td class="status">
                     {% if attempt.graded %}
                     <span class="badge bg-success">Graded</span>
@@ -149,6 +149,7 @@
               </tbody>
             </table>
           </div>
+
           <!--Table Pagination  -->
         <div class="card-footer d-flex justify-content-between">
           <button class="btn btn-sm btn-outline-secondary" id="grading-prev">Prev</button>
@@ -189,7 +190,7 @@
 <form style="display:none;">{% csrf_token %}</form>
 <script>
   let quizPage = 1, notifPage = 1, gradePage = 1, broadcastPage = 1;
-
+  
   function fetchTeacherDashboard() {
     fetch(`{% url 'teacher_dashboard_data' %}?page=${quizPage}&notif_page=${notifPage}&grade_page=${gradePage}&broadcast_page=${broadcastPage}`)
       .then(res => res.json())
@@ -212,6 +213,121 @@
               <p><strong>Students In Class:</strong> ${data.summary.total_students}</p>
             </div>
           </div>`;
+        
+        /*
+          Leaderboard renderer.
+          - Call renderLeaderboard(data.performance) from your fetchTeacherDashboard() after data is received.
+          - Expects an array like: [{ "attempt__student__username": "jdoe", "avg_score": 82.5 }, ...]
+        */
+        function renderLeaderboard(performance, containerId = 'leaderboard-list', top = 5) {
+          const container = document.getElementById(containerId);
+          if (!container) return;
+
+          // Normalize entries to { name, score }
+          const list = (performance || []).map(p => {
+            const name = p.student_name || p.attempt__student__username || p.attempt__student__username || Object.values(p)[0] || 'Unknown';
+            const score = Number(p.avg_score ?? p.score ?? 0);
+            return { name, score };
+          });
+
+          // Sort desc and take top N
+          list.sort((a,b) => b.score - a.score);
+          const topList = list.slice(0, top);
+
+          // Build HTML
+          if (topList.length === 0) {
+            container.innerHTML = '<li class="list-group-item">No data</li>';
+            return;
+          }
+
+          container.innerHTML = topList.map((item, idx) => {
+            // small progress bar + rank
+            const pct = Math.max(0, Math.min(100, Math.round(item.score)));
+            return `
+              <li class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                  <strong>${idx+1}. ${escapeHtml(item.name)}</strong>
+                  <div class="small text-muted">Avg: ${pct}%</div>
+                </div>
+                <div style="min-width:140px;">
+                  <div class="progress" style="height:10px;">
+                    <div class="progress-bar" role="progressbar" style="width:${pct}%;" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"></div>
+                  </div>
+                </div>
+              </li>`;
+          }).join('');
+        }
+
+        // small helper to avoid XSS when injecting usernames
+        function escapeHtml(str) {
+          if (typeof str !== 'string') return str;
+          return str.replace(/[&<>"'`=\/]/g, function (s) {
+            return ({
+              '&': '&amp;',
+              '<': '&lt;',
+              '>': '&gt;',
+              '"': '&quot;',
+              "'": '&#39;',
+              '/': '&#x2F;',
+              '`': '&#x60;',
+              '=': '&#x3D;'
+            })[s];
+          });
+        }
+
+      // keep chart instance across updates
+      let performanceChartInstance = null;
+
+      function renderPerformanceChart(performance) {
+        const canvas = document.getElementById('performanceChart');
+        if (!canvas) return;
+
+        // normalize performance array -> [{name, score}]
+        const items = (performance || []).map(p => {
+          const name = p.attempt__student__username || p.student || p.student_name || p.full_name || Object.values(p)[0] || 'Unknown';
+          const score = Number(p.avg_score ?? p.total_score ?? p.score ?? 0);
+          return { name, score };
+        });
+
+        const labels = items.map(i => i.name);
+        const values = items.map(i => i.score);
+
+        // destroy previous chart if canvas was reused incorrectly
+        if (performanceChartInstance) {
+          performanceChartInstance.data.labels = labels;
+          performanceChartInstance.data.datasets[0].data = values;
+          performanceChartInstance.update();
+          return;
+        }
+
+        performanceChartInstance = new Chart(canvas, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Avg score (%)',
+              data: values,
+              backgroundColor: 'rgba(54, 162, 235, 0.6)',
+              borderColor: 'rgba(54, 162, 235, 1)',
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              y: { beginAtZero: true, suggestedMax: 100 }
+            },
+            plugins: { legend: { display: false } }
+          }
+        });
+      }
+
+        // Example: call this inside your fetchTeacherDashboard .then(data => { ... })
+        /*
+          // after processing other sections:
+          renderLeaderboard(data.performance);
+        */
 
         // Quizzes
         document.getElementById("quizzes-area").innerHTML =
@@ -314,10 +430,8 @@
     setTimeout(() => toast.remove(), 4000);
   }
   fetchTeacherDashboard();
-  setInterval(fetchTeacherDashboard, 15000);
-</script>
+  setInterval(fetchTeacherDashboard, 35000);
 
-<script>
 
 (() => {
   const csrftoken = () => (document.querySelector('[name=csrfmiddlewaretoken]') || {}).value || '';
@@ -348,7 +462,8 @@
           if (!res.ok) throw new Error('Network response was not ok');
           return res.text();
         })
-        .then(html => { modalBody.innerHTML = html; })
+        .then(html => { modalBody.innerHTML = html;
+       })
         .catch(err => {
           console.error(err);
           modalBody.innerHTML = `<div class="text-danger text-center">Error loading form</div>`;
@@ -401,24 +516,24 @@
         // ...summary/quizzes/notifications rendering unchanged...
         // Render grading attempts — support server return key "grading"
         const tbody = document.querySelector('#attemptsTable tbody');
-        if (tbody) {
-          let rowsHtml = '';
-          if (data.attempts_html) {
+            if (data.attempts_html) {
             tbody.innerHTML = data.attempts_html;
           } else if (Array.isArray(data.grading)) {
-            rowsHtml = data.grading.map(attempt => `
+            rowsHtml = data.grading.map(attempt => {
+              const date = attempt.submitted_at ? new Date(attempt.submitted_at).toLocaleString() : '';
+              const score = (attempt.total_score !== undefined) ? attempt.total_score : (attempt.score ?? '-');
+              return `
               <tr id="row-${attempt.id}">
                 <td>${attempt.full_name}</td>
                 <td>${attempt.quiz}</td>
-                <td class="score">${attempt.total_score ?? '-'}</td>
+                <td class="score">${score ?? '-'}</td>
                 <td class="status">${attempt.graded ? '<span class="badge bg-success">Graded</span>' : '<span class="badge bg-warning text-dark">Pending</span>'}</td>
-                <td></td>
+                <td>${date}</td>
                 <td>${attempt.graded ? '<span class="text-muted">Done</span>' : `<button class="btn btn-sm btn-primary grade-btn" data-attempt-id="${attempt.id}" data-bs-toggle="modal" data-bs-target="#gradeModal">Grade</button>`}</td>
-              </tr>
-            `).join('');
+              </tr>`;
+            }).join('');
             tbody.innerHTML = rowsHtml;
           }
-        }
 
         // update pagers...
         attachGradeHandlers(); // bind handlers to current DOM
@@ -429,76 +544,10 @@
   // initial bind for server-rendered buttons
   attachGradeHandlers();
   fetchTeacherDashboard();
-  setInterval(fetchTeacherDashboard, 15000);
-})();
-
-
-/*
-  Leaderboard renderer.
-  - Call renderLeaderboard(data.performance) from your fetchTeacherDashboard() after data is received.
-  - Expects an array like: [{ "attempt__student__username": "jdoe", "avg_score": 82.5 }, ...]
-*/
-function renderLeaderboard(performance, containerId = 'leaderboard-list', top = 5) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
-
-  // Normalize entries to { name, score }
-  const list = (performance || []).map(p => {
-    const name = p.student_name || p.attempt__student__username || p.attempt__student__username || Object.values(p)[0] || 'Unknown';
-    const score = Number(p.avg_score ?? p.score ?? 0);
-    return { name, score };
-  });
-
-  // Sort desc and take top N
-  list.sort((a,b) => b.score - a.score);
-  const topList = list.slice(0, top);
-
-  // Build HTML
-  if (topList.length === 0) {
-    container.innerHTML = '<li class="list-group-item">No data</li>';
-    return;
-  }
-
-  container.innerHTML = topList.map((item, idx) => {
-    // small progress bar + rank
-    const pct = Math.max(0, Math.min(100, Math.round(item.score)));
-    return `
-      <li class="list-group-item d-flex justify-content-between align-items-center">
-        <div>
-          <strong>${idx+1}. ${escapeHtml(item.name)}</strong>
-          <div class="small text-muted">Avg: ${pct}%</div>
-        </div>
-        <div style="min-width:140px;">
-          <div class="progress" style="height:10px;">
-            <div class="progress-bar" role="progressbar" style="width:${pct}%;" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"></div>
-          </div>
-        </div>
-      </li>`;
-  }).join('');
-}
-
-// small helper to avoid XSS when injecting usernames
-function escapeHtml(str) {
-  if (typeof str !== 'string') return str;
-  return str.replace(/[&<>"'`=\/]/g, function (s) {
-    return ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;',
-      '/': '&#x2F;',
-      '`': '&#x60;',
-      '=': '&#x3D;'
-    })[s];
-  });
-}
-
-// Example: call this inside your fetchTeacherDashboard .then(data => { ... })
-/*
-  // after processing other sections:
   renderLeaderboard(data.performance);
-*/
+  renderPerformanceChart(data.performance);
+  setInterval(fetchTeacherDashboard, 10000);
+})();
 
 </script>
 

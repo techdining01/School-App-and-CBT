@@ -74,7 +74,7 @@ class StudentQuizAttempt(models.Model):
     end_time = models.DateTimeField(null=True, blank=True)  # quiz expiry
     is_submitted = models.BooleanField(default=False)  # submitted or not
     submitted_at = models.DateTimeField(auto_now_add=True)
-    score = models.FloatField(default=0.0)  # total score for the attempt
+    score = models.FloatField(default=0.0)  # score for the attempt
     graded = models.BooleanField(default=False)
     retake_allowed = models.BooleanField(default=False)  # ✅ admin/superadmin override
     retake_count = models.PositiveIntegerField(default=0)  # how many times student retook

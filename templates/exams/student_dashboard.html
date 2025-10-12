@@ -188,7 +188,7 @@
       div.innerHTML = `<div class="d-flex justify-content-between align-items-center">
         <div>
           <strong>${a.quiz} -- ${a.subject}</strong> ${retakeBadge}<br>
-          <small class="text-muted">Score: ${a.score} • Obtained: ${a.score}/${a.total_marks}</small>
+          <small class="text-muted">Score: ${a.obtained} • Obtained: ${a.total_score}/${a.total_qmarks}</small>
         </div>
         <div>
           <a class="btn btn-sm btn-outline-secondary" href="/exams/attempt/${a.attempt_id}/review/">Review</a>

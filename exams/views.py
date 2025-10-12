@@ -352,12 +352,28 @@ def is_teacher(user):
 def teacher_dashboard(request):
     """Render teacher dashboard page"""
     teacher = request.user
-    attempts = StudentQuizAttempt.objects.filter(
-        quiz__created_by=teacher, is_submitted=True, graded=False, quiz__school_class=teacher.student_class).select_related(
-            'quiz', 'student').order_by('-submitted_at')
-    print(attempts)
+    # attempts = StudentQuizAttempt.objects.all().order_by('-id')
 
-    return render(request, "exams/teacher_dashboard.html", {"attempts": attempts})
+    # return render(request, "exams/teacher_dashboard.html", {
+    #     "attempts": attempts
+    # })
+
+    pending_attempts = (
+        StudentQuizAttempt.objects
+        .filter(
+            quiz__created_by=teacher,
+            is_submitted=True,
+            answers__is_pending=True,
+            answers__question__question_type='subjective'
+        )
+        .select_related('quiz', 'student')
+        .distinct()
+        .order_by('-submitted_at')
+    )
+
+    return render(request, "exams/teacher_dashboard.html", {
+        "attempts": pending_attempts
+    })
 
 @login_required
 @user_passes_test(is_teacher_or_admin)
@@ -371,12 +387,11 @@ def teacher_dashboard_data(request):
     grade_page_num = request.GET.get("grade_page", 1)
     broadcast_page_num = request.GET.get("broadcast_page", 1)
 
-    # Attempts
-    teacher = request.user
-    attempts = StudentQuizAttempt.objects.filter(
-        quiz__created_by=teacher, is_submitted=True).select_related(
-            'quiz', 'student').order_by('-submitted_at')
-
+    # Attempts (all submitted attempts created by this teacher)
+    attempts_qs = StudentQuizAttempt.objects.filter(
+        quiz__created_by=teacher, is_submitted=True
+    ).select_related('quiz', 'student').order_by('-submitted_at')
+    
     # Quizzes
     quizzes = Quiz.objects.filter(school_class=student_class).annotate(
         attempt_count=Count("studentquizattempt")
@@ -391,12 +406,22 @@ def teacher_dashboard_data(request):
     notifications = Notification.objects.filter(recipient=teacher).order_by("-created_at")
     notif_page = Paginator(notifications, 5).get_page(notif_page_num)
 
-    # Grading
-    pending_attempts = StudentQuizAttempt.objects.filter(
-        quiz__created_by=teacher, is_submitted=True).select_related(
-            'quiz', 'student').order_by('-submitted_at')
+    # Grading: only submitted but NOT yet graded attempts (pending grading)
+    teacher = request.user
 
+    # Show pending attempts initially (attempts that have at least one pending subjective answer)
+    pending_attempts = (
+        StudentQuizAttempt.objects
+        .filter(
+            quiz__created_by=teacher,
+            is_submitted=True
+        )
+        .select_related('quiz', 'student')
+        .order_by('-submitted_at')
+    )
+    
     grade_page = Paginator(pending_attempts, 5).get_page(grade_page_num)
+    
 
     # Performance
     performance = (
@@ -407,16 +432,17 @@ def teacher_dashboard_data(request):
 
     data = {
         "summary": {
-            "teacher": teacher.username,
-            "attempts": attempts,
+            "teacher": f" {teacher.username}, {teacher.first_name}",
+            # return a simple count, not the QuerySet
+            "attempts": attempts_qs.count(),
             "student_class": str(student_class),
             "total_quizzes": quizzes.count(),
             "my_quizzes": Quiz.objects.filter(created_by=teacher).count(),
             "my_class_quizzes": Quiz.objects.filter(created_by=teacher, school_class=student_class).count(),
             "objectives": Question.objects.filter(quiz__school_class=student_class, question_type="objective").count(),
+            "pended": StudentQuizAttempt.objects.filter(quiz__created_by=teacher, is_submitted=True).select_related('quiz', 'student').order_by('-id').count(),
             "graded": Answer.objects.filter(question__quiz__created_by=teacher, is_pending=False).count(),
-            "pended": Answer.objects.filter(question__quiz__created_by=teacher, is_pending=True).count(),
-            "attempts": StudentQuizAttempt.objects.filter(student__student_class=student_class).count(),
+            "attempts_total": StudentQuizAttempt.objects.filter(student__student_class=student_class).count(),
             "total_students": User.objects.filter(student_class=student_class, role="student").count(),
         },
         "quizzes": [
@@ -450,6 +476,7 @@ def teacher_dashboard_data(request):
             for b in broadcast_page
         ],
         "performance": list(performance),
+       
         "grading": [
             {
                 "id": a.id,
@@ -457,13 +484,13 @@ def teacher_dashboard_data(request):
                 "full_name": a.student.get_full_name(),
                 "quiz": a.quiz.title,
                 "quiz_id": a.quiz.id,
-                "score": a.score,
-                "total_score": a.total_score,
+                "score": float(a.score or 0.0),
                 "graded": bool(a.graded),
-                
+                "submitted_at": datetime.date(a.submitted_at) if getattr(a, "submitted_at", None) else None,
             }
             for a in grade_page
         ],
+
         "pagination": {
             "quiz_page_number": quiz_page.number,
             "quiz_num_pages": quiz_page.paginator.num_pages,
@@ -475,7 +502,7 @@ def teacher_dashboard_data(request):
             "grade_num_pages": grade_page.paginator.num_pages,
         },
     }
-    print(data['summary']['attempts'])
+    print(data["performance"])
     return JsonResponse(data)
 
 
@@ -547,25 +574,29 @@ def grade_attempt(request, attempt_id):
             score = request.POST.get(f'score_{ans.id}', '0')
             try:
                 ans.score = float(score)
-                ans.save()
+                ans.is_pending = False
+                ans.graded_by = request.user
+                ans.graded_at = timezone.now()
+                ans.save(update_fields=["score", "is_pending", "graded_by", "graded_at"])
                 total_subjective += ans.score
             except ValueError:
-                pass
+                continue
 
         total_objective = Answer.objects.filter(
             attempt=attempt, question__question_type='objective'
-        ).aggregate(Sum('score'))['score__sum'] or 0
+        ).aggregate(Sum('score'))['score__sum'] or 0.0
+
 
         total_score = total_objective + total_subjective
-        attempt.total_score = total_score
+        attempt.score = total_score
         attempt.graded = True
-        attempt.save()
+        attempt.save(update_fields=["score", "graded"])
 
         if _is_ajax(request):
             return JsonResponse({
                 "success": True,
-                "message": f"Grading completed. Total score = {total_score}",
-                "total_score": total_score
+                "message": f"Grading completed. Total score = {score}",
+                "total_score": score
             })
 
         messages.success(request, "✅ Grading completed successfully!")
@@ -577,6 +608,24 @@ def grade_attempt(request, attempt_id):
             "attempt": attempt,
             "answers": answers,
         })
+    
+    ActionLog(
+        user = request.user,
+        action_type = 'Grade',
+        description = 'grading exam',
+        created_at = timezone.now(),
+        model_name = Answer,
+        object_id = str(ans.quiz.id),
+        timestamp = timezone.now(),
+        details = "Your exam has been graded"
+    )
+
+    Notification(
+        sender = request.user,
+        recipient = get_object_or_404(User, id=attempt_id, role="student"),
+        message=f"Your exam has been graded: {ans.quiz.title}",
+        created_at = timezone.now()
+    )
 
     return render(request, "exams/grading_attempt.html", {
         "attempt": attempt,
@@ -864,11 +913,11 @@ def student_dashboard_data(request):
 
     # pagination params
     notif_page = int(request.GET.get("notif_page", 1))
-    notif_page_size = int(request.GET.get("notif_page_size", 6))
+    notif_page_size = int(request.GET.get("notif_page_size", 5))
     quizzes_page = int(request.GET.get("quizzes_page", 1))
-    quizzes_page_size = int(request.GET.get("quizzes_page_size", 6))
+    quizzes_page_size = int(request.GET.get("quizzes_page_size", 5))
     attempts_page = int(request.GET.get("attempts_page", 1))
-    attempts_page_size = int(request.GET.get("attempts_page_size", 6))
+    attempts_page_size = int(request.GET.get("attempts_page_size", 5))
 
     # ---------------- Notifications (paginated) ----------------
     notif_qs = Notification.objects.filter(recipient=student).order_by("-created_at")
@@ -956,19 +1005,20 @@ def student_dashboard_data(request):
     for a in ap_obj:
         # compute totals for this attempt using Answer model
         answer = Answer.objects.filter(attempt=a).select_related("question", "selected_choice")
-        total_marks = 0
-        obj = 0.0
+        total_score = Answer.objects.filter(attempt=a).aggregate(total=Sum('score'))['total'] or 0
+        total_qmarks = 0.0
+        obtained = 0.0
         pending_subjectives_count = 0
         wrong_review = []
         for ans in answer:
             q_marks = getattr(ans.question, "marks", 0) or 0
-            total_marks += q_marks
+            total_qmarks += q_marks
             if ans.is_pending:
                 pending_subjectives_count += 1
                 # subjective might not have marks yet; don't include
             else:
                 # for objective and graded subjective
-                obj += float(ans.score or 0.0)
+                obtained += float(ans.score or 0.0)
             # for review: detect wrong objective answer
             # if question is objective and selected_choice exists but is incorrect
             if getattr(ans.question, "question_type", getattr(ans.question, "type", None)) in ("objective", "multiple_choice"):
@@ -988,9 +1038,9 @@ def student_dashboard_data(request):
             "quiz_id": a.quiz.id,
             "quiz": a.quiz.title if a.quiz else "", 
             "subject": a.quiz.subject.name,
-            "score": float(a.score),
-            "obj": obj,
-            "total_marks": total_marks,
+            "total_score": total_score,
+            "obtained": obtained,
+            "total_qmarks": total_qmarks,
             "pending_subjectives": pending_subjectives_count,
             "is_submitted": bool(a.is_submitted),
             "started_at": datetime.date(a.started_at) if getattr(a, "started_at", None) else None,
@@ -1022,22 +1072,7 @@ def student_dashboard_data(request):
     ]
 
     # ---------------- Performance Chart (per subject in student's class) ----------------
-    # attempts = StudentQuizAttempt.objects.filter(student=request.user)
-
-    # # Chart: subject-wise average score
-    # chart_data = []
-    # for attempt in attempts:
-    #     total = Answer.objects.filter(attempt=attempt).aggregate(Sum("score"))["score__sum"] or 0
-    #     chart_data.append({
-    #         "quiz": attempt.quiz.title,
-    #         "score": total,
-    #     })
-
-    # return render(request, "students/dashboard.html", {
-    #     "attempts": attempts,
-    #     "chart_data": chart_data,
-    # })
-
+    
 
     attempts = StudentQuizAttempt.objects.filter(student=student, is_submitted=True)
 
@@ -1057,8 +1092,6 @@ def student_dashboard_data(request):
             pct = round((obtained / possible) * 100, 2) if possible > 0 else 0.0
             performance_chart.append({"subject": subj, "obtained": obtained, "possible": possible, "percentage": pct})
    
-    print(past_attempts)
-    print(performance_chart)
 
     # ---------------- Return JSON ----------------
 
@@ -1349,8 +1382,8 @@ def class_subject_crud(request):
 
 
 # ---- QUIZ MANAGEMENT ----
-# @login_required
-# @user_passes_test(is_admin)
+@login_required
+@user_passes_test(is_admin)
 def manage_quizzes_admin(request):
     quizzes = Quiz.objects.all().order_by("-created_at")
 
@@ -1569,6 +1602,7 @@ def retake_requests_list(request):
 @login_required
 @user_passes_test(is_admin_or_superadmin)
 def handle_retake_request(request, request_id):
+    old_attempt = get_object_or_404(StudentQuizAttempt, id=request_id)
     req = get_object_or_404(RetakeRequest, id=request_id)
     if request.method == "POST":
         decision = request.POST.get("decision")
@@ -1577,9 +1611,7 @@ def handle_retake_request(request, request_id):
             req.save()
             message = f"Your retake request for {req.quiz.title} was approved."
 
-
             # Remove old attempt and its answers
-            old_attempt = req.attempt
             Answer.objects.filter(attempt=old_attempt).delete()
             old_attempt.delete()
 
@@ -1640,27 +1672,27 @@ def handle_retake_request(request, request_id):
 
 # -------------------------Teacher Dashboard -------------------------------------#
 # AJAX endpoints (JSON) for periodic refresh (every 10 seconds)
-@login_required
-def ajax_student_summary(request):
-    user = request.user
-    attempts = StudentQuizAttempt.objects.filter(student=user)
-    total_attempts = attempts.count()
-    avg_score = attempts.aggregate(avg=Avg('total_score'))['avg'] or 0
-    pending_count = Answer.objects.filter(attempt__student=user, is_pending=True).count()
-    data = {
-        "total_attempts": total_attempts,
-        "avg_score": float(avg_score),
-        "pending_count": pending_count,
-    }
-    return JsonResponse(data)
+# @login_required
+# def ajax_student_summary(request):
+#     user = request.user
+#     attempts = StudentQuizAttempt.objects.filter(student=user)
+#     total_attempts = attempts.count()
+#     avg_score = attempts.aggregate(avg=Avg('total_score'))['avg'] or 0
+#     pending_count = Answer.objects.filter(attempt__student=user, is_pending=True).count()
+#     data = {
+#         "total_attempts": total_attempts,
+#         "avg_score": float(avg_score),
+#         "pending_count": pending_count,
+#     }
+#     return JsonResponse(data)
 
 
-@login_required
-@user_passes_test(is_teacher)
-def ajax_teacher_pending_subjectives(request):
-    user = request.user
-    pending_count = Answer.objects.filter(question__quiz__created_by=user, is_pending=True).count()
-    return JsonResponse({"pending_count": pending_count})
+# @login_required
+# @user_passes_test(is_teacher)
+# def ajax_teacher_pending_subjectives(request):
+#     user = request.user
+#     pending_count = Answer.objects.filter(question__quiz__created_by=user, is_pending=True).count()
+#     return JsonResponse({"pending_count": pending_count})
 
 
 # --------------------------------------------------------------#
@@ -2557,7 +2589,7 @@ def take_quiz_view(request, quiz_id):
     Show the take-quiz page. Create or resume attempt server-side.
     """
     if not is_student(request.user):
-        return HttpResponseForbidden("forbidden")
+        return HttpResponseForbidden("forbidden") 
 
     quiz = get_object_or_404(Quiz, id=quiz_id)
 
@@ -2711,19 +2743,22 @@ def api_submit_attempt(request, attempt_id):
         })
 
     # Auto-grade objective answers
-    total_score = 0.0
+    score = 0.0
+
     for ans in Answer.objects.filter(attempt=attempt).select_related("question", "selected_choice"):
         q = ans.question
         if q.question_type == "objective":
             if ans.selected_choice and getattr(ans.selected_choice, "is_correct", False):
                 ans.score = float(q.marks)
+                score += q.marks
+            
             else:
                 ans.score = 0.0
             ans.is_pending = False
             ans.save(update_fields=["score", "is_pending"])
         # subjective answers left as is (pending until graded)
 
-    # calculate totals using Answer helper methods
+       # calculate totals using Answer helper methods
     objective_sum = Answer.objective_score(attempt)
     subjective_sum = Answer.subjective_score(attempt)  # only graded subjective answers contribute
     total_score = float(objective_sum) + float(subjective_sum)
@@ -2731,7 +2766,8 @@ def api_submit_attempt(request, attempt_id):
     attempt.score = total_score
     attempt.is_submitted = True
     attempt.submitted_at = timezone.now() if hasattr(attempt, "submitted_at") else timezone.now()
-    attempt.save(update_fields=["score", "is_submitted", "submitted_at"])
+    attempt.save()
+ 
 
     ActionLog.objects.create(user=request.user, action_type="Submitted Exam", description=f"Submitted attempt {attempt.id}", model_name="StudentQuizAttempt", object_id=str(attempt.id), details={"score": attempt.score})
 

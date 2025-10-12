@@ -18,7 +18,7 @@ class QuizAdmin(admin.ModelAdmin):
 
 
 class AnswerAdmin(admin.ModelAdmin):
-    list_display = ('attempt', 'question', 'total_score', 'is_pending')
+    list_display = ('attempt', 'question', 'is_pending')
 
 
 admin.site.register(Class)
@@ -26,13 +26,12 @@ admin.site.register(Subject)
 admin.site.register(Quiz, QuizAdmin)
 admin.site.register(Question, QuestionAdmin)
 admin.site.register(Choice)
-# admin.site.register(StudentQuizAttempt)
 admin.site.register(Answer, AnswerAdmin)
 
 
 @admin.register(StudentQuizAttempt)
 class StudentQuizAttemptAdmin(admin.ModelAdmin):
-    list_display = ("student", "quiz", "is_submitted", "retake_allowed", "retake_count")
+    list_display = ("student", "quiz", "is_submitted", "score", "retake_allowed", "retake_count")
     list_filter = ("is_submitted", "retake_allowed")
     actions = ["allow_retake"]
 
