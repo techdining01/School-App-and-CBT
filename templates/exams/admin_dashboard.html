@@ -1,5 +1,6 @@
-{% extends "base.html" %} {% load static %} 
-{% block title %} Admin Dashboard {%endblock title %} 
+<!-- ...existing code... -->
+{% extends "base.html" %} {% load static %}
+{% block title %} Admin Dashboard {% endblock title %}
 {% block content %}
 <div class="container mt-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
@@ -7,16 +8,16 @@
       <h3 class="d-inline ms-2 fw-bold">🛠️ Admin Dashboard</h3>
     </div>
     <div class="d-flex align-items-center">
-      <a href="{% url 'manage_quizzes' %}" class="btn btn-success btn-sm me-2"
-        >Advance</a>
+      <a href="{% url 'manage_quizzes' %}" class="btn btn-success btn-sm me-2">Advance</a>
     </div>
   </div>
+
   <!-- Stats row -->
   <div class="row" id="stats-container"></div>
 
-  <!-- Two-column: Pending users + Leaderboard -->
   <div class="row mt-3">
     <div class="col-md-7">
+      <!-- Pending Users -->
       <div class="card mb-3">
         <div class="card-header d-flex justify-content-between">
           <strong>Pending Users</strong>
@@ -45,52 +46,15 @@
         </div>
         <div class="card-body">
           <div id="quizzes-list"></div>
-          <nav><ul class="pagination" id="quizzes-pagination"></ul></nav>
-        </div>
-      </div>
-    </div>
-    <br />
-    <div class="col-md-5">
-      <!-- Broadcast -->
-      <div class="card mb-3 p-2">
-        <div class="card-header"><strong>Broadcast Message</strong></div>
-        <div class="card-body">
-          <form id="broadcastForm">
-            <div class="mb-2">
-              <label class="form-label">Send to</label>
-              <select name="role" id="broadcastRole" class="form-select">
-                <option value="student">Students</option>
-                <option value="teacher">Teachers</option>
-                <option value="superadmin">Superadmin</option>
-              </select>
-            </div>
-            <div class="mb-2">
-              <textarea
-                id="broadcastMessage"
-                class="form-control"
-                rows="3"
-                placeholder="Write message..."
-              ></textarea>
-            </div>
-            <div class="d-flex gap-2">
-              <button type="submit" class="btn btn-primary">
-                Send Broadcast
-              </button>
-              <button id="downloadPdf" type="button" class="btn btn-danger">
-                Download PDF
-              </button>
-              <button id="downloadExcel" type="button" class="btn btn-success">
-                Download Excel
-              </button>
-            </div>
-            <div id="broadcastResult" class="mt-2"></div>
-          </form>
+          <nav>
+            <ul class="pagination" id="quizzes-pagination"></ul>
+          </nav>
         </div>
       </div>
 
       <!-- Leaderboard -->
       <div class="card mb-3">
-        <div class="card-header"><strong>Leaderboard</strong></div>
+        <div class="card-header"><strong>Leaderboard (Best per class)</strong></div>
         <div class="card-body p-0">
           <table class="table mb-0">
             <thead class="table-light">
@@ -111,92 +75,98 @@
       <div class="card mb-3">
         <div class="card-header"><strong>Class Performance</strong></div>
         <div class="card-body">
-          <canvas id="classPerformanceChart" height="150"></canvas>
+          <canvas id="classPerformanceChart" height="400"></canvas>
         </div>
       </div>
 
+      <div id="admin-dashboard" class="mt-3"></div>
+    </div>
+
+    <div class="col-md-5">
       <!-- Notifications -->
       <div class="card mb-3">
-        <div class="card-header"><strong>Notifications</strong></div>
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <strong>Notifications</strong>
+        </div>
         <ul class="list-group list-group-flush" id="admin-notifications"></ul>
+        <div class="card-footer d-flex justify-content-between align-items-center">
+          <div>
+            <button id="notif-prev" class="btn btn-sm btn-outline-secondary">Prev</button>
+            <button id="notif-next" class="btn btn-sm btn-outline-secondary">Next</button>
+          </div>
+          <small id="notif-pager">Page 1</small>
+        </div>
       </div>
-    </div>
-  </div>
 
-  <!-- User/Quiz Management -->
-  <!-- Quiz Management -->
-  <div class="row">
-    <div class="col-md-7">
+      <!-- Broadcast -->
+      <div class="card mb-3 p-2">
+        <div class="card-header"><strong>Broadcast Message</strong></div>
+        <div class="card-body">
+          <form id="broadcastForm">
+            <div class="mb-2">
+              <label class="form-label">Send to</label>
+              <select name="role" id="broadcastRole" class="form-select">
+                <option value="student">Students</option>
+                <option value="teacher">Teachers</option>
+                <option value="superadmin">Superadmin</option>
+              </select>
+            </div>
+            <div class="mb-2">
+              <textarea id="broadcastMessage" class="form-control" rows="3" placeholder="Write message..."></textarea>
+            </div>
+            <div class="form-group">
+              <button type="submit" class="btn btn-primary">
+                Send Broadcast
+              </button>
+            </div>
+            <div id="broadcastResult" class="mt-2"></div>
+          </form>
+        </div>
+      </div>
+
+      <div class="card mb-3 p-3">
+        <button id="downloadPdf" type="button" class="btn btn-warning w-100">Download PDF</button>
+      </div>
+
+      <!-- User & Quiz Management -->
+      <div class="card mt-3">
+        <div class="card-header d-flex justify-content-between">
+          <strong>User Management</strong>
+        </div>
+        <div class="card-body">
+          <a href="{% url 'create_user' %}" class="btn btn-primary sm">Create User</a>
+          <a href="{% url 'manage_users' %}" class="btn btn-success sm">Manage Users</a>
+          <a href="{% url 'manage_classes_subjects' %}" class="btn btn-warning sm">Manage Classes & Subjects</a>
+        </div>
+      </div>
+
       <div class="card mt-3">
         <div class="card-header d-flex justify-content-between">
           <strong>Exams Management</strong>
         </div>
         <div class="card-body">
-          <a href="{% url 'create_quiz' %}" class="btn btn-primary sm"
-            >Create Exam</a>
-          <a href="{% url 'manage_quizzes' %}" class="btn btn-secondary sm"
-            >Manage Exams</a
-          >
-          <a href="{% url 'retake_requests_list' %}" class="btn btn-success sm"
-            >Allow retake exam</a
-          >
+          <a href="{% url 'create_quiz' %}" class="btn btn-primary sm">Create Exam</a>
+          <a href="{% url 'manage_quizzes' %}" class="btn btn-success sm">Manage Exams</a>
+          <a href="{% url 'retake_requests_list' %}" class="btn btn-warning sm">Allow retake exam</a>
         </div>
       </div>
-    </div>
 
-      <div class="col-md-5">
-        <div class="card mt-3">
-          <div class="card-header d-flex justify-content-between">
-            <strong>User Management</strong>
-          </div>
-          <div class="card-body">
-            <a href="{% url 'create_user' %}" class="btn btn-primary sm"
-              >Create User</a
-            >
-            <a href="{% url 'manage_users' %}" class="btn btn-secondary sm"
-              >Manage Users</a
-            >
-            <a href="{% url 'manage_classes_subjects' %}" class="btn btn-warning sm"
-              >Manage Classes & Subjects</a
-            >
+      <!-- Recent actions (paginated) -->
+      <div class="card mt-3">
+        <div class="card-header d-flex justify-content-between">
+          <strong>Recent Actions</strong>
+          <div>
+            <small>Page: </small>
+            <input id="logsPage" type="number" value="1" min="1" style="width: 70px" class="form-control d-inline-block" />
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Recent actions (paginated) -->
-    <div class="row">
-    <div class="col-md-7">
-    <div class="card mt-3">
-      <div class="card-header d-flex justify-content-between">
-        <strong>Recent Actions</strong>
-        <div>
-          <small>Page: </small>
-          <input
-            id="logsPage"
-            type="number"
-            value="1"
-            min="1"
-            style="width: 70px"
-            class="form-control d-inline-block"
-          />
+        <ul class="list-group list-group-flush" id="logs"></ul>
+        <div class="card-body">
+          <small class="text-muted">Actions are logged for auditing.</small>
         </div>
-      </div> 
-      
-      <ul class="list-group list-group-flush" id="logs"></ul>
-      <div class="card-body">
-        <small class="text-muted">Actions are logged for auditing.</small>
       </div>
     </div>
   </div>
-
-   
-      <div class="col-md-5">
-        <div class="card mt-3">
-        </div>
-      </div>
-      
-  <div id="admin-dashboard"></div>
 
   <!-- Quiz Detail Modal -->
   <div class="modal fade" id="quizDetailModal" tabindex="-1">
@@ -204,28 +174,130 @@
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">Exam Details</h5>
-          <button
-            type="button"
-            class="btn-close"
-            data-bs-dismiss="modal"
-          ></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
-        <div class="modal-body" id="quizDetailModalBody">
-          <!-- Filled by AJAX -->
-        </div>
+        <div class="modal-body" id="quizDetailModalBody"></div>
       </div>
     </div>
   </div>
 
-  <!-- Extra JS -->
-  {% block extra_js %}
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script>
-    const DATA_URL = "{% url 'admin_dashboard_data' %}";
-    const csrftoken = "{{ csrf_token }}";
+</div>
 
-    let classChart = null;
-    async function fetchDashboard(page_logs = 1, page_quizzes = 1) {
+{% block extra_js %}
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+  const DATA_URL = "{% url 'admin_dashboard_data' %}";
+  const csrftoken = "{{ csrf_token }}";
+
+  let performanceChartInstance = null;
+  let notifPage = 1;
+  const notifPageSize = 5;
+  let latestNotifications = [];
+
+  function formatDate(d) {
+    try { return new Date(d).toLocaleString(); } catch { return ""; }
+  }
+
+  function renderLeaderboard(list) {
+    const tbody = document.getElementById("leaderboard");
+    if (!tbody) return;
+    if (!Array.isArray(list) || list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No data</td></tr>';
+      return;
+    }
+    tbody.innerHTML = list.map((l, idx) => {
+      const avg = Number(l.avg_score ?? 0).toFixed(2);
+      const name = (l.first_name || "") + (l.last_name ? (" " + l.last_name) : "");
+      return `<tr>
+        <td>${idx+1}</td>
+        <td>${l.username || l.student || name}</td>
+        <td>${name}</td>
+        <td>${l.class_name || l.class || l.className || 'Unknown'}</td>
+        <td>${avg}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function normalizePerformanceData(payload) {
+    const src = payload.class_performance || payload.performance || payload.classPerformance || [];
+    return (src || []).map(r => ({
+      label: r.class_name || r.class || r.className || 'Unknown',
+      value: Number(r.avg_score ?? r.avg ?? r.value ?? 0)
+    }));
+  }
+
+  function renderPerformanceChartFromResponse(payload) {
+    const canvas = document.getElementById('classPerformanceChart');
+    if (!canvas) return;
+    const items = normalizePerformanceData(payload);
+    const labels = items.map(i => i.label);
+    const values = items.map(i => i.value);
+
+    if (!items.length) {
+      if (performanceChartInstance) {
+        performanceChartInstance.data.labels = [];
+        performanceChartInstance.data.datasets[0].data = [];
+        performanceChartInstance.update();
+      }
+      return;
+    }
+
+    if (performanceChartInstance) {
+      performanceChartInstance.data.labels = labels;
+      performanceChartInstance.data.datasets[0].data = values;
+      performanceChartInstance.update();
+      return;
+    }
+
+    performanceChartInstance = new Chart(canvas.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Avg score (%)',
+          data: values,
+          backgroundColor: 'rgba(54,162,235,0.6)',
+          borderColor: 'rgba(54,162,235,1)',
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true, suggestedMax: 100 } },
+        plugins: { legend: { display: false } }
+      }
+    });
+  }
+
+  // render current page of notifications (client-side pagination)
+  function renderNotifications() {
+    const container = document.getElementById("admin-notifications");
+    const pager = document.getElementById("notif-pager");
+    if (!container || !pager) return;
+    const total = latestNotifications.length || 0;
+    const totalPages = Math.max(1, Math.ceil(total / notifPageSize));
+    if (notifPage < 1) notifPage = 1;
+    if (notifPage > totalPages) notifPage = totalPages;
+    if (total === 0) {
+      container.innerHTML = '<li class="list-group-item text-muted">No notifications</li>';
+      pager.innerText = 'Page 0 of 0';
+      document.getElementById("notif-prev").disabled = true;
+      document.getElementById("notif-next").disabled = true;
+      return;
+    }
+    const start = (notifPage - 1) * notifPageSize;
+    const slice = latestNotifications.slice(start, start + notifPageSize);
+    container.innerHTML = slice.map(n => `<li class="list-group-item">${n.message} <div class="small text-muted">${formatDate(n.created_at)}</div></li>`).join('');
+    pager.innerText = `Page ${notifPage} of ${totalPages}`;
+    document.getElementById("notif-prev").disabled = notifPage <= 1;
+    document.getElementById("notif-next").disabled = notifPage >= totalPages;
+  }
+
+  async function fetchDashboard(page_logs = 1, page_quizzes = 1) {
+    try {
       const url = new URL(DATA_URL, window.location.origin);
       url.searchParams.set("logs_page", page_logs);
       url.searchParams.set("quizzes_page", page_quizzes);
@@ -233,381 +305,219 @@
       url.searchParams.set("quizzes_page_size", 6);
 
       const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to fetch dashboard data');
       const data = await res.json();
 
       // Stats
-      const s = data.stats;
+      const s = data.stats || {};
       document.getElementById("stats-container").innerHTML = `
-    <div class="col-md-3"><div class="card p-2 text-center">Total Users<br><strong>${s.total_users}</strong></div></div>
-    <div class="col-md-3"><div class="card p-2 text-center">Admins<br><strong>${s.admins}</strong></div></div>
-    <div class="col-md-3"><div class="card p-2 text-center">Teachers<br><strong>${s.teachers}</strong></div></div>
-    <div class="col-md-3"><div class="card p-2 text-center">Students<br><strong>${s.students}</strong></div></div>
-    <div class="col-md-3"><div class="card p-2 text-center">Pending<br><strong>${s.pending_users}</strong></div></div>
-    <div class="col-md-3"><div class="card p-2 text-center">Exams<br><strong>${s.quizzes}</strong></div></div>
-    <div class="col-md-3"><div class="card p-2 text-center">Subjects<br><strong>${s.subjects}</strong></div></div>
-    <div class="col-md-3"><div class="card p-2 text-center">Classes<br><strong>${s.classes}</strong></div></div>
-    `;
+        <div class="col-md-3"><div class="card p-2 text-center">Total Users<br><strong>${s.total_users||0}</strong></div></div>
+        <div class="col-md-3"><div class="card p-2 text-center">Admins<br><strong>${s.admins||0}</strong></div></div>
+        <div class="col-md-3"><div class="card p-2 text-center">Teachers<br><strong>${s.teachers||0}</strong></div></div>
+        <div class="col-md-3"><div class="card p-2 text-center">Students<br><strong>${s.students||0}</strong></div></div>
+        <div class="col-md-3"><div class="card p-2 text-center">Pending<br><strong>${s.pending_users||0}</strong></div></div>
+        <div class="col-md-3"><div class="card p-2 text-center">Exams<br><strong>${s.quizzes||0}</strong></div></div>
+        <div class="col-md-3"><div class="card p-2 text-center">Subjects<br><strong>${s.subjects||0}</strong></div></div>
+        <div class="col-md-3"><div class="card p-2 text-center">Classes<br><strong>${s.classes||0}</strong></div></div>
+      `;
 
       // Pending users
-      let pendingHtml = "";
-      data.pending_list.forEach((u) => {
-        pendingHtml += `
-      <tr>
-        <td>${u.username}</td>
-        <td>${u.email}</td>
-        <td>${u.role}</td>
-        <td>${new Date(u.date_joined).toLocaleString()}</td>
-        <td>
-          <button class="btn btn-success btn-sm" onclick="updateUserStatus(${
-            u.id
-          }, 'approve')">Approve</button>
-          <button class="btn btn-danger btn-sm" onclick="updateUserStatus(${
-            u.id
-          }, 'reject')">Reject</button>
-          <button class="btn btn-secondary btn-sm" onclick="updateUserStatus(${
-            u.id
-          }, 'pending')">Pend</button>
-        </td>
-      </tr>`;
-      });
-      document.getElementById("pending-users").innerHTML = pendingHtml;
+      document.getElementById("pending-users").innerHTML = (data.pending_list || []).map(u => `
+        <tr>
+          <td>${u.username}</td>
+          <td>${u.email}</td>
+          <td>${u.role}</td>
+          <td>${formatDate(u.date_joined)}</td>
+          <td>
+            <button class="btn btn-success btn-sm" onclick="updateUserStatus(${u.id}, 'approve')">Approve</button>
+            <button class="btn btn-danger btn-sm" onclick="updateUserStatus(${u.id}, 'reject')">Reject</button>
+            <button class="btn btn-secondary btn-sm" onclick="updateUserStatus(${u.id}, 'pending')">Pend</button>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="5" class="text-center text-muted">No pending users</td></tr>';
 
-      // Quizzes list (paginated)
-      let quizzesHtml = "";
-      data.quizzes.forEach((q) => {
-        quizzesHtml += `
-      <div class="border p-2 mb-2">
-        <div class="d-flex justify-content-between">
-          <div><strong>${q.title}</strong> <div class="small text-muted">${
-          q.subject
-        } • ${q.class_name}</div></div>
-          <div>
-            <small class="d-block">By ${q.created_by}</small>
-            <small class="d-block">${new Date(
-              q.start_time
-            ).toLocaleString()} - ${new Date(
-          q.end_time
-        ).toLocaleString()}</small>
-            <button id="publish-btn-${q.id}" class="btn btn-sm ${
-          q.is_published ? "btn-outline-danger" : "btn-outline-primary"
-        } mt-1" onclick="togglePublish(${q.id})">${
-          q.is_published ? "Unpublish" : "Publish"
-        }</button>
-            <a href="#" class="btn btn-sm btn-outline-secondary mt-1" onclick="viewQuiz(${
-              q.id
-            }); return false;">View</a>
+      // Quizzes list
+      const quizzes = data.quizzes || [];
+      document.getElementById("quizzes-list").innerHTML = quizzes.map(q => `
+        <div class="border p-2 mb-2">
+          <div class="d-flex justify-content-between">
+            <div><strong>${q.title}</strong> <div class="small text-muted">${q.subject} • ${q.class_name}</div></div>
+            <div>
+              <small class="d-block">By ${q.created_by}</small>
+              <small class="d-block">${formatDate(q.start_time)} - ${formatDate(q.end_time)}</small>
+              <button id="publish-btn-${q.id}" class="btn btn-sm ${q.is_published ? "btn-outline-danger" : "btn-outline-primary"} mt-1" onclick="togglePublish(${q.id})">${q.is_published ? "Unpublish" : "Publish"}</button>
+              <a href="#" class="btn btn-sm btn-outline-secondary mt-1" onclick="viewQuiz(${q.id}); return false;">View</a>
+            </div>
           </div>
         </div>
-      </div>
-    `;
-      });
-      document.getElementById("quizzes-list").innerHTML = quizzesHtml;
+      `).join('') || '<div class="text-muted">No quizzes</div>';
 
       // Quizzes pagination
       const quizzesPages = data.quizzes_total_pages || 1;
       let pagHtml = "";
       for (let i = 1; i <= quizzesPages; i++) {
-        pagHtml += `<li class="page-item ${
-          i === page_quizzes ? "active" : ""
-        }"><a class="page-link" href="#" onclick="fetchDashboard(${
-          document.getElementById("logsPage").value || 1
-        }, ${i}); return false;">${i}</a></li>`;
+        pagHtml += `<li class="page-item ${i === page_quizzes ? "active" : ""}"><a class="page-link" href="#" onclick="fetchDashboard(${document.getElementById("logsPage").value || 1}, ${i}); return false;">${i}</a></li>`;
       }
       document.getElementById("quizzes-pagination").innerHTML = pagHtml;
 
-      // Leaderboard
-      let lbHtml = "";
-      data.leaderboard.forEach((l, idx) => {
-        lbHtml += `<tr><td>${idx + 1}</td><td>${l.username}</td><td>${
-          l.first_name} ${l.last_name}
-        </td><td>${l.class}</td><td>${l.avg_score.toFixed(2)}</td></tr>`;
-      });
-      document.getElementById("leaderboard").innerHTML = lbHtml;
+      // Leaderboard (best in each class)
+      renderLeaderboard(data.leaderboard || []);
 
-      // Logs (paginated)
-      let logsHtml = "";
-      data.logs.forEach((l) => {
-        // Build details string dynamically
+      // Logs
+      const logs = data.logs || [];
+      document.getElementById("logs").innerHTML = logs.map(l => {
         let detailsHtml = "";
         if (l.details) {
-          for (const [key, value] of Object.entries(l.details)) {
-            detailsHtml += `<div><strong>${key}:</strong> ${JSON.stringify(
-              value
-            )}</div>`;
-          }
+          for (const [k,v] of Object.entries(l.details)) detailsHtml += `<div><strong>${k}:</strong> ${JSON.stringify(v)}</div>`;
         }
+        return `<li class="list-group-item"><strong>${l.user} — ${l.action_type}</strong> - ${detailsHtml}<div class="small text-muted">${formatDate(l.timestamp)}</div></li>`;
+      }).join('') || '<li class="list-group-item text-muted">No logs</li>';
 
-        logsHtml += `
-      <li class="list-group-item"><strong>${l.user} — ${
-          l.action_type
-        }</strong> - ${detailsHtml}
-        <div class="small text-muted">${new Date(
-          l.timestamp
-        ).toLocaleString()}</div>
-      </li>
-    `;
-      });
+      // Notifications — client-side pagination
+      latestNotifications = Array.isArray(data.notifications) ? data.notifications : [];
+      notifPage = 1;
+      renderNotifications();
 
-      document.getElementById("logs").innerHTML = logsHtml;
+      // Render class performance chart
+      try { renderPerformanceChartFromResponse(data); } catch (e) { console.error("Chart render error", e); }
 
-      // Notifications
-      let notifHtml = "";
-      data.notifications.forEach((n) => {
-        notifHtml += `<li class="list-group-item">${
-          n.message
-        } <div class="small text-muted">${new Date(
-          n.created_at
-        ).toLocaleString()}</div></li>`;
-      });
-      document.getElementById("admin-notifications").innerHTML = notifHtml;
-
-      // Class performance chart
-      const labels = data.class_performance.map((c) => c.name);
-      const values = data.class_performance.map((c) => c.avg_score);
-      const ctx = document
-        .getElementById("classPerformanceChart")
-        .getContext("2d");
-      if (classChart) classChart.destroy();
-      classChart = new Chart(ctx, {
-        type: "bar",
-        data: {
-          labels,
-          datasets: [
-            {
-              label: "Avg Score",
-              data: values,
-              backgroundColor: "rgba(54,162,235,0.7)",
-            },
-          ],
-        },
-      });
+    } catch (err) {
+      console.error(err);
+      // optional: show a toast or message to user
     }
+  }
 
-    // Update user status via POST
-    async function updateUserStatus(userId, status) {
+  // Update user status via POST
+  async function updateUserStatus(userId, status) {
+    const resp = await fetch(DATA_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrftoken,
+      },
+      body: JSON.stringify({
+        action_type: "update_user_status",
+        user_id: userId,
+        status: status,
+      }),
+    });
+    const d = await resp.json();
+    if (d.ok) {
+      fetchDashboard();
+    } else {
+      alert(d.error || "Error");
+    }
+  }
+
+  // Broadcast form handler
+  document.addEventListener('DOMContentLoaded', function () {
+    // bind notification pager buttons
+    document.getElementById("notif-prev")?.addEventListener("click", function () {
+      if (notifPage > 1) { notifPage--; renderNotifications(); }
+    });
+    document.getElementById("notif-next")?.addEventListener("click", function () {
+      const totalPages = Math.max(1, Math.ceil((latestNotifications.length||0) / notifPageSize));
+      if (notifPage < totalPages) { notifPage++; renderNotifications(); }
+    });
+
+    document.getElementById("broadcastForm").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const role = document.getElementById("broadcastRole").value;
+      const message = document.getElementById("broadcastMessage").value.trim();
+      if (!message) { alert("Message empty"); return; }
       const resp = await fetch(DATA_URL, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRFToken": csrftoken,
-        },
-        body: JSON.stringify({
-          action_type: "update_user_status",
-          user_id: userId,
-          status: status,
-        }),
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrftoken },
+        body: JSON.stringify({ action_type: "broadcast", role: role, message: message })
       });
       const d = await resp.json();
+      document.getElementById("broadcastResult").innerText = d.ok ? d.message : (d.error || "Error sending broadcast");
       if (d.ok) {
-        alert(d.message);
+        document.getElementById("broadcastMessage").value = "";
         fetchDashboard();
-      } else {
-        alert(d.error || "Error");
       }
-    }
+    });
 
-    // Broadcast form handler
-    document
-      .getElementById("broadcastForm")
-      .addEventListener("submit", async function (e) {
-        e.preventDefault();
-        const role = document.getElementById("broadcastRole").value;
-        const message = document
-          .getElementById("broadcastMessage")
-          .value.trim();
-        if (!message) {
-          alert("Message empty");
-          return;
-        }
-        const resp = await fetch(DATA_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": csrftoken,
-          },
-          body: JSON.stringify({
-            action_type: "broadcast",
-            role: role,
-            message: message,
-          }),
-        });
-        const d = await resp.json();
-        if (d.ok) {
-          document.getElementById("broadcastResult").innerText = d.message;
-          document.getElementById("broadcastMessage").value = "";
-          fetchDashboard();
-        } else {
-          document.getElementById("broadcastResult").innerText =
-            d.error || "Error sending broadcast";
-        }
+    document.getElementById("downloadPdf").addEventListener("click", async function () {
+      const resp = await fetch(DATA_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrftoken },
+        body: JSON.stringify({ action_type: "download", format: "pdf" }),
       });
+      if (!resp.ok) {
+        const j = await resp.json().catch(() => ({}));
+        alert(j.error || "Download failed");
+        return;
+      }
+      const blob = await resp.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "all_attempts.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      fetchDashboard();
+    });
 
-    // Download buttons
-    document
-      .getElementById("downloadPdf")
-      .addEventListener("click", async function () {
-        // POST action_type download format pdf -> returns PDF stream
-        const resp = await fetch(DATA_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": csrftoken,
-          },
-          body: JSON.stringify({ action_type: "download", format: "pdf" }),
-        });
-        if (!resp.ok) {
-          const j = await resp.json().catch(() => ({}));
-          alert(j.error || "Download failed");
-          return;
-        }
-        const blob = await resp.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "all_attempts.pdf";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        fetchDashboard();
-      });
-
-    document
-      .getElementById("downloadExcel")
-      .addEventListener("click", async function () {
-        const resp = await fetch(DATA_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": csrftoken,
-          },
-          body: JSON.stringify({ action_type: "download", format: "excel" }),
-        });
-        if (!resp.ok) {
-          const j = await resp.json().catch(() => ({}));
-          alert(j.error || "Download failed");
-          return;
-        }
-        const blob = await resp.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "all_attempts.xlsx";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        fetchDashboard();
-      });
-
-    // logs page input
     document.getElementById("logsPage").addEventListener("change", function () {
       const p = parseInt(this.value) || 1;
       fetchDashboard(p, 1);
     });
 
-    // initial load & interval refresh
+    // initial load & interval
     fetchDashboard();
-    setInterval(
-      () =>
-        fetchDashboard(
-          parseInt(document.getElementById("logsPage").value || 1, 10),
-          1
-        ),
-      10000
-    );
-  </script>
+    setInterval(() => fetchDashboard(parseInt(document.getElementById("logsPage").value || 1, 10), 1), 10000);
+  });
 
-  <div id="admin-dashboard"></div>
-
-  <script>
-    function loadAdminDashboard() {
-      fetch("{% url 'admin_dashboard_data' %}")
-        .then((r) => r.json())
-        .then((data) => {
-          document.getElementById("admin-dashboard").innerHTML = `
-        <h3>Stats</h3>
-        Total Users: ${data.stats.total_users} <br>
-        Admins: ${data.stats.admins}, 
-        Teachers: ${data.stats.teachers}, Students: ${data.stats.students}
-
-        <h3>Leaderboard</h3>
-        <ul>${data.leaderboard
-          .map((u) => `<li>${u.username}: ${u.avg_score}</li>`)
-          .join("")}</ul>
-        <h5> Learn and grow! 📚🚀 everyday</h5>
-      `;
-        });
-    }
-    loadAdminDashboard();
-    setInterval(loadAdminDashboard, 10000);
-  </script>
-
-  <script>
-    function getCSRFToken() {
-      let cookieValue = null;
-      if (document.cookie && document.cookie !== "") {
-        const cookies = document.cookie.split(";");
-        for (let i = 0; i < cookies.length; i++) {
-          const cookie = cookies[i].trim();
-          if (cookie.startsWith("csrftoken=")) {
-            cookieValue = decodeURIComponent(
-              cookie.substring("csrftoken=".length)
-            );
-            break;
-          }
+  // Quiz helpers
+  function getCSRFToken() {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== "") {
+      const cookies = document.cookie.split(";");
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.startsWith("csrftoken=")) {
+          cookieValue = decodeURIComponent(cookie.substring("csrftoken=".length));
+          break;
         }
       }
-      return cookieValue;
     }
+    return cookieValue;
+  }
 
-    async function togglePublish(quizId) {
-      try {
-        const res = await fetch(
-          `/exams/api/quizzes/${quizId}/toggle-publish/`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-CSRFToken": getCSRFToken(),
-            },
-          }
-        );
-        const data = await res.json();
-        if (data.ok) {
-          fetchDashboard(); // refresh full quiz list immediately
-        } else {
-          alert("Error: " + (data.error || "Unknown error"));
-        }
-      } catch (err) {
-        alert("Error updating exam status.");
+  async function togglePublish(quizId) {
+    try {
+      const res = await fetch(`/exams/api/quizzes/${quizId}/toggle-publish/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": getCSRFToken() },
+      });
+      const data = await res.json();
+      if (data.ok) fetchDashboard();
+      else alert("Error: " + (data.error || "Unknown error"));
+    } catch (err) { alert("Error updating exam status."); }
+  }
+
+  async function viewQuiz(quizId) {
+    try {
+      const res = await fetch(`/exams/api/quizzes/${quizId}/`);
+      const data = await res.json();
+      if (data.ok) {
+        document.getElementById("quizDetailModalBody").innerHTML = `
+          <p><strong>Title:</strong> ${data.quiz.title}</p>
+          <p><strong>Subject:</strong> ${data.quiz.subject}</p>
+          <p><strong>Class:</strong> ${data.quiz.class_name}</p>
+          <p><strong>Duration:</strong> ${data.quiz.duration_minutes} minutes</p>
+          <p><strong>Published:</strong> ${data.quiz.is_published ? "✅ Yes" : "❌ No"}</p>
+        `;
+        new bootstrap.Modal(document.getElementById("quizDetailModal")).show();
+      } else {
+        alert("Error: " + (data.error || "Could not fetch exam details"));
       }
+    } catch (err) {
+      alert("Failed to load exam details.");
     }
-
-    async function viewQuiz(quizId) {
-      try {
-        const res = await fetch(`/exams/api/quizzes/${quizId}/`);
-        const data = await res.json();
-        if (data.ok) {
-          document.getElementById("quizDetailModalBody").innerHTML = `
-        <p><strong>Title:</strong> ${data.quiz.title}</p>
-        <p><strong>Subject:</strong> ${data.quiz.subject}</p>
-        <p><strong>Class:</strong> ${data.quiz.class_name}</p>
-        <p><strong>Duration:</strong> ${data.quiz.duration_minutes} minutes</p>
-        <p><strong>Published:</strong> ${
-          data.quiz.is_published ? "✅ Yes" : "❌ No"
-        }</p>
-      `;
-          new bootstrap.Modal(
-            document.getElementById("quizDetailModal")
-          ).show();
-        } else {
-          alert("Error: " + (data.error || "Could not fetch exam details"));
-        }
-      } catch (err) {
-        alert("Failed to load exam details.");
-      }
-    }
-  </script>
-</div>
-  {% endblock %} 
-
-{% endblock %} 
+  }
+</script>
+{% endblock %}
+{% endblock %}

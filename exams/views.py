@@ -285,16 +285,56 @@ def admin_dashboard_data(request):
         for l in page_logs
     ]
 
-    # Leaderboard (top students by average score across answers)
-    leaderboard_qs = StudentQuizAttempt.objects.filter(is_submitted=True).values("student__username", 'student__first_name', 'student__last_name', 'student__student_class__name').annotate(avg_score=Avg("score")).order_by("-avg_score")[:10]
+        
+    # Best student per class (leaderboard showing top student for each class)
+    per_student_class_qs = (
+        StudentQuizAttempt.objects.filter(is_submitted=True)
+        .values(
+            "student__id",
+            "student__username",
+            "student__first_name",
+            "student__last_name",
+            "student__student_class__id",
+            "student__student_class__name",
+        )
+        .annotate(avg_score=Avg("score"))
+        .order_by("student__student_class__id", "-avg_score", "submitted_at")
+    )
 
-    leaderboard = [{"username": x["student__username"], "first_name": x["student__first_name"], "last_name": x['student__last_name'], "class": x["student__student_class__name"], "avg_score": float(x["avg_score"] or 0)} for x in leaderboard_qs]
+    # pick the top student per class (first row per class after ordering)
+    best_in_class_map = {}
+    for row in per_student_class_qs:
+        cls_id = row.get("student__student_class__id") or 0
+        if cls_id not in best_in_class_map:
+            best_in_class_map[cls_id] = {
+                "class_id": cls_id if cls_id != 0 else None,
+                "class_name": row.get("student__student_class__name") or "Unknown",
+                "student_id": row.get("student__id"),
+                "username": row.get("student__username"),
+                "first_name": row.get("student__first_name"),
+                "last_name": row.get("student__last_name"),
+                "avg_score": float(row.get("avg_score") or 0.0),
+            }
 
-    # Class performance (avg obtained marks grouped by class)
-    class_perf_qs = Answer.objects.values("attempt__quiz__subject__school_class__name").annotate(avg_score=Avg("score")).order_by("attempt__quiz__subject__school_class__name")
+    # final leaderboard: best student for each class
+    leaderboard = list(best_in_class_map.values())
+
+    # Class performance: average score per class (avg of attempts' scores grouped by student's class)
+    class_perf_qs = (
+        StudentQuizAttempt.objects.filter(is_submitted=True)
+        .values("student__student_class__id", "student__student_class__name")
+        .annotate(avg_score=Avg("score"))
+        .order_by("student__student_class__name")
+    )
+
     class_performance = [
-        {"class_name": row["attempt__quiz__subject__school_class__name"] or "Unknown", "avg_score": float(row["avg_score"] or 0)}
+        {
+            "class_id": row.get("student__student_class__id") or None,
+            "class_name": row.get("student__student_class__name") or "Unknown",
+            "avg_score": float(row.get("avg_score") or 0.0),
+        }
         for row in class_perf_qs
+    
     ]
 
     # Available quizzes (paginated) - show basic metadata
@@ -1531,10 +1571,13 @@ def get_quizzes_with_status(student):
 @login_required
 @user_passes_test(is_admin_or_superadmin)
 def retake_requests_list(request):
-    q = request.GET.get('q', '')
-    page_number = request.GET.get('page', 1)
+    """
+    List retake requests; supports AJAX pagination/search returning HTML fragment.
+    """
+    q = request.GET.get("q", "").strip()
+    page_number = request.GET.get("page", 1)
 
-    requests_qs = RetakeRequest.objects.select_related('student', 'quiz').order_by('-created_at')
+    requests_qs = RetakeRequest.objects.select_related("student", "quiz").order_by("-created_at")
     if q:
         requests_qs = requests_qs.filter(
             Q(student__first_name__icontains=q) |
@@ -1545,98 +1588,82 @@ def retake_requests_list(request):
     paginator = Paginator(requests_qs, 10)
     requests_page = paginator.get_page(page_number)
 
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        html = render_to_string('exams/partials/_retake_requests_table.html', {'requests': requests_page})
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        html = render_to_string("exams/partials/_retake_requests_table.html", {"requests": requests_page}, request=request)
         return HttpResponse(html)
 
-    return render(request, 'exams/admin_retake_requests.html', {'requests': requests_page})
+    return render(request, "exams/admin_retake_requests.html", {"requests": requests_page})
 
-
-# @login_required
-# @user_passes_test(is_admin_or_superadmin)
-# def handle_retake_request(request, request_id):
-#     retake_req = get_object_or_404(RetakeRequest, id=request_id, status="pending")
-#     decision = request.POST.get("decision")  # "approve" or "deny"
-
-#     if decision == "approve":
-#         attempt, created = StudentQuizAttempt.objects.get_or_create(
-#             student=retake_req.student,
-#             quiz=retake_req.quiz,
-#             defaults={"retake_allowed": True, "is_submitted": False, "retake_count": 1}
-#         )
-#         if not created:
-#             attempt.retake_allowed = True
-#             attempt.is_submitted = False
-#             attempt.end_time = None
-#             attempt.retake_count += 1
-#             attempt.save()
-
-#         retake_req.status = "approved"
-#         message = f"Your retake request for {retake_req.quiz.title} was approved."
-
-#     else:
-#         retake_req.status = "denied"
-#         message = f"Your retake request for {retake_req.quiz.title} was denied."
-
-#     retake_req.reviewed_by = request.user
-#     retake_req.reviewed_at = timezone.now()
-#     retake_req.save(update_fields=["status", "reviewed_by", "reviewed_at"])
-
-#     ActionLog.objects.create(
-#         user=request.user,
-#         action_type=f"Retake {retake_req.status.capitalize()}",
-#         model_name="RetakeRequest",
-#         object_id=str(retake_req.id),
-#         details={"student": retake_req.student.username, "exam": retake_req.quiz.title}
-#     )
-
-#     Notification.objects.create(
-#         sender=request.user,
-#         recipient=retake_req.student,
-#         role='admin',
-#         message=message
-#     )
-
-#     return JsonResponse({"success": True, "message": message})
 
 @login_required
 @user_passes_test(is_admin_or_superadmin)
+@require_POST
 def handle_retake_request(request, request_id):
-    old_attempt = get_object_or_404(StudentQuizAttempt, id=request_id)
-    req = get_object_or_404(RetakeRequest, id=request_id)
-    if request.method == "POST":
-        decision = request.POST.get("decision")
-        if decision == "approve":
-            req.status = "approved"
-            req.save()
-            message = f"Your retake request for {req.quiz.title} was approved."
+    """
+    Approve or deny a retake request (POST only).
+    Expects POST param: decision = "approve" | "deny"
+    """
+    req = get_object_or_404(RetakeRequest.objects.select_related("student", "quiz"), id=request_id)
 
-            # Remove old attempt and its answers
-            Answer.objects.filter(attempt=old_attempt).delete()
-            old_attempt.delete()
+    # prevent double-processing
+    if req.status != "pending":
+        return JsonResponse({"success": False, "message": "Request already processed"}, status=400)
 
-            return JsonResponse({"success": True, "message": "Retake approved and previous attempt removed"})
-        else:
-            req.status = "denied"
-            req.save()
-            message = f"Your retake request for {req.quiz.title} was denied."
-            return JsonResponse({"success": True, "message": "Retake denied"})
-        
+    decision = request.POST.get("decision")
+    if decision not in ("approve", "deny"):
+        return JsonResponse({"success": False, "message": "Invalid decision"}, status=400)
+
+    if decision == "approve":
+        # mark request approved
+        req.status = "approved"
+        req.save(update_fields=["status"])
+
+        # find the previous attempt to remove (prefer explicit relation if present)
+        attempt = getattr(req, "attempt", None)
+        if not attempt:
+            attempt = StudentQuizAttempt.objects.filter(student=req.student, quiz=req.quiz).order_by("-submitted_at").first()
+
+        if attempt:
+            # delete answers then attempt
+            Answer.objects.filter(attempt=attempt).delete()
+            attempt.delete()
+
+        message = f"Your retake request for {req.quiz.title} was approved."
+        # log & notify
+        ActionLog.objects.create(
+            user=request.user,
+            action_type="Retake Approved",
+            model_name="RetakeRequest",
+            object_id=str(req.id),
+            details={"student": req.student.username, "exam": req.quiz.title},
+        )
+        Notification.objects.create(
+            sender=request.user,
+            recipient=req.student,
+            role="student",
+            message=message,
+        )
+
+        return JsonResponse({"success": True, "message": "Retake approved and previous attempt removed"})
+
+    # deny branch
+    req.status = "denied"
+    req.save(update_fields=["status"])
+    message = f"Your retake request for {req.quiz.title} was denied."
     ActionLog.objects.create(
         user=request.user,
-        action_type=f"Retake {req.status.capitalize()}",
+        action_type="Retake Denied",
         model_name="RetakeRequest",
         object_id=str(req.id),
-        details={"student": req.student.username, "exam": req.quiz.title}
+        details={"student": req.student.username, "exam": req.quiz.title},
     )
-
     Notification.objects.create(
         sender=request.user,
         recipient=req.student,
-        role='admin',
-        message=message
+        role="student",
+        message=message,
     )
-
+    return JsonResponse({"success": True, "message": "Retake denied"})
 
 # -----------------------------Retake Approval & Request ended ---------------------------------#
 
@@ -2626,7 +2653,7 @@ def take_quiz_view(request, quiz_id):
             retake_count=(last_attempt.retake_count+1 if last_attempt else 0),
             score=0.0
         )
-        ActionLog.objects.create(user=request.user, action_type="Started Exam", description=f"Started exam {quiz.title}", model_name="StudentQuizAttempt", object_id=str(attempt.id), details={"quiz": quiz.title})
+        ActionLog.objects.create(user=request.user, action_type="Started Exam", description=f"Started exam {quiz.title}", model_name="StudentQuizAttempt", object_id=str(attempt.id), details={"Exam": quiz.title})
 
     # ensure questions are prefetched for template rendering
     questions = quiz.questions.prefetch_related("choices").all()
@@ -2944,7 +2971,7 @@ def student_request_retake_view(request, quiz_id):
         description="Requested retake",
         model_name="RetakeRequest",
         object_id=str(rr.id),
-        details={"quiz": quiz.title},
+        details={"Exam": quiz.title},
     )
 
     return JsonResponse({"ok": True, "message": "Retake request sent."})
