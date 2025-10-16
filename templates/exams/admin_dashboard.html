@@ -124,8 +124,45 @@
         </div>
       </div>
 
-      <div class="card mb-3 p-3">
-        <button id="downloadPdf" type="button" class="btn btn-warning w-100">Download PDF</button>
+      <div class="card mb-3">
+        <div class="card-header">
+          <strong>Generate Class Reports</strong>
+        </div>
+        <div class="card-body">
+          <table class="table table-bordered align-middle">
+            <thead>
+              <tr>
+                <th>Class Name</th>
+                <th>Students</th>
+                <th>Generate Report</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for cls in classes %}
+              <tr>
+                <td>{{ cls.name }}</td>
+                <td>{{ cls.students.count }}</td>
+                <td>
+                  <a href="{% url 'admin_classes_report_pdf' cls.id %}" class="btn btn-sm btn-success">
+                    <i class="bi bi-file-earmark-pdf"></i> Generate Report
+                  </a>
+                </td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="3" class="text-center text-muted">No classes found.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          <small class="text-muted">Generates PDF reports of student performances per class.</small>
+          <a href="{% url 'admin_report_generator' %}" class="btn btn-warning btn-sm mb-2 p-2 fw-semi-bold w-100">Download Advance Report (PDF)</a>
+        </div> 
+        <div class="card-footer d-flex justify-content-between align-item-center">
+          <button class="btn btn-sm btn-outline-secondary">Prev</button>
+          <small class="text-muted" id="report-pager"></small>
+          <button class="btn btn-sm btn-outline-secondary">Next</button>
+        </div>
       </div>
 
       <!-- User & Quiz Management -->
@@ -157,7 +194,8 @@
           <strong>Recent Actions</strong>
           <div>
             <small>Page: </small>
-            <input id="logsPage" type="number" value="1" min="1" style="width: 70px" class="form-control d-inline-block" />
+            <input id="logsPage" type="number" value="1" min="1" style="width: 70px"
+              class="form-control d-inline-block" />
           </div>
         </div>
         <ul class="list-group list-group-flush" id="logs"></ul>
@@ -211,7 +249,7 @@
       const avg = Number(l.avg_score ?? 0).toFixed(2);
       const name = (l.first_name || "") + (l.last_name ? (" " + l.last_name) : "");
       return `<tr>
-        <td>${idx+1}</td>
+        <td>${idx + 1}</td>
         <td>${l.username || l.student || name}</td>
         <td>${name}</td>
         <td>${l.class_name || l.class || l.className || 'Unknown'}</td>
@@ -311,14 +349,14 @@
       // Stats
       const s = data.stats || {};
       document.getElementById("stats-container").innerHTML = `
-        <div class="col-md-3"><div class="card p-2 text-center">Total Users<br><strong>${s.total_users||0}</strong></div></div>
-        <div class="col-md-3"><div class="card p-2 text-center">Admins<br><strong>${s.admins||0}</strong></div></div>
-        <div class="col-md-3"><div class="card p-2 text-center">Teachers<br><strong>${s.teachers||0}</strong></div></div>
-        <div class="col-md-3"><div class="card p-2 text-center">Students<br><strong>${s.students||0}</strong></div></div>
-        <div class="col-md-3"><div class="card p-2 text-center">Pending<br><strong>${s.pending_users||0}</strong></div></div>
-        <div class="col-md-3"><div class="card p-2 text-center">Exams<br><strong>${s.quizzes||0}</strong></div></div>
-        <div class="col-md-3"><div class="card p-2 text-center">Subjects<br><strong>${s.subjects||0}</strong></div></div>
-        <div class="col-md-3"><div class="card p-2 text-center">Classes<br><strong>${s.classes||0}</strong></div></div>
+        <div class="col-md-3"><div class="card p-2 text-center">Total Users<br><strong>${s.total_users || 0}</strong></div></div>
+        <div class="col-md-3"><div class="card p-2 text-center">Admins<br><strong>${s.admins || 0}</strong></div></div>
+        <div class="col-md-3"><div class="card p-2 text-center">Teachers<br><strong>${s.teachers || 0}</strong></div></div>
+        <div class="col-md-3"><div class="card p-2 text-center">Students<br><strong>${s.students || 0}</strong></div></div>
+        <div class="col-md-3"><div class="card p-2 text-center">Pending<br><strong>${s.pending_users || 0}</strong></div></div>
+        <div class="col-md-3"><div class="card p-2 text-center">Exams<br><strong>${s.quizzes || 0}</strong></div></div>
+        <div class="col-md-3"><div class="card p-2 text-center">Subjects<br><strong>${s.subjects || 0}</strong></div></div>
+        <div class="col-md-3"><div class="card p-2 text-center">Classes<br><strong>${s.classes || 0}</strong></div></div>
       `;
 
       // Pending users
@@ -368,7 +406,7 @@
       document.getElementById("logs").innerHTML = logs.map(l => {
         let detailsHtml = "";
         if (l.details) {
-          for (const [k,v] of Object.entries(l.details)) detailsHtml += `<div><strong>${k}:</strong> ${JSON.stringify(v)}</div>`;
+          for (const [k, v] of Object.entries(l.details)) detailsHtml += `<div><strong>${k}:</strong> ${JSON.stringify(v)}</div>`;
         }
         return `<li class="list-group-item"><strong>${l.user} — ${l.action_type}</strong> - ${detailsHtml}<div class="small text-muted">${formatDate(l.timestamp)}</div></li>`;
       }).join('') || '<li class="list-group-item text-muted">No logs</li>';
@@ -416,7 +454,7 @@
       if (notifPage > 1) { notifPage--; renderNotifications(); }
     });
     document.getElementById("notif-next")?.addEventListener("click", function () {
-      const totalPages = Math.max(1, Math.ceil((latestNotifications.length||0) / notifPageSize));
+      const totalPages = Math.max(1, Math.ceil((latestNotifications.length || 0) / notifPageSize));
       if (notifPage < totalPages) { notifPage++; renderNotifications(); }
     });
 
@@ -438,27 +476,7 @@
       }
     });
 
-    document.getElementById("downloadPdf").addEventListener("click", async function () {
-      const resp = await fetch(DATA_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRFToken": csrftoken },
-        body: JSON.stringify({ action_type: "download", format: "pdf" }),
-      });
-      if (!resp.ok) {
-        const j = await resp.json().catch(() => ({}));
-        alert(j.error || "Download failed");
-        return;
-      }
-      const blob = await resp.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "all_attempts.pdf";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      fetchDashboard();
-    });
+    
 
     document.getElementById("logsPage").addEventListener("change", function () {
       const p = parseInt(this.value) || 1;

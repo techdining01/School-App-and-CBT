@@ -42,7 +42,13 @@ from django.core.paginator import Paginator
 from django.contrib import messages
 from django.db.models import Avg
 
-
+from django.db.models import Sum
+from django.utils import timezone
+from reportlab.platypus import PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from matplotlib import pyplot as plt
 
 
 
@@ -117,8 +123,9 @@ def is_admin(user):
 @login_required
 @user_passes_test(is_admin)
 def admin_dashboard(request):
-    # Render the shell; the dynamic data comes from admin_dashboard_data
-    return render(request, "exams/admin_dashboard.html", {})
+    classes = Class.objects.all()
+    
+    return render(request, "exams/admin_dashboard.html", {'classes': classes})
 
 
 # Admin dashboard data endpoint (GET -> fetch data; POST -> perform actions such as approve/reject/broadcast/download)
@@ -191,68 +198,6 @@ def admin_dashboard_data(request):
                 details={"role": role, "count": created, "message": message[:200]},
             )
             return JsonResponse({"ok": True, "message": f"Broadcast sent to {created} {role}(s).", "count": created})
-
-        # ---------------------------
-        # Download all attempts (excel or pdf)
-        # payload: {action: "download", format: "pdf"|"excel"}
-        # ---------------------------
-        if action_type == "download":
-            if request.user.role not in ("admin", "superadmin"):
-                return JsonResponse({"error": "forbidden"}, status=403)
-
-            fmt = payload.get("format", "pdf")
-            # Query attempts (all submitted attempts)
-            attempts_qs = StudentQuizAttempt.objects.filter(is_submitted=True).select_related("quiz", "student")
-
-            # Build in-memory file
-            if fmt == "excel":
-                wb = openpyxl.Workbook()
-                ws = wb.active
-                ws.title = "AllAttempts"
-                headers = ["Student", "Username", "Quiz", "Score", "Started At", "submitted At"]
-                ws.append(headers)
-                for a in attempts_qs:
-                    student_username = a.student.username if hasattr(a.student, "username") else str(a.student)
-                    started = a.started_at.strftime("%Y-%m-%d %H:%M") if a.started_at else ""
-                    submitted_at = a.submitted_at.strftime("%Y-%m-%d %H:%M") if getattr(a, "submitted_at", None) else ""
-                    ws.append([getattr(a.student, "get_full_name", student_username) or student_username, student_username, a.quiz.title, a.score, started, submitted_at])
-                # save to bytes
-                bio = io.BytesIO()
-                wb.save(bio)
-                bio.seek(0)
-                ActionLog.objects.create(user=request.user, action_type="Downloaded all attempts (excel)", model_name="StudentQuizAttempt", object_id="all", details={"count": attempts_qs.count()})
-                response = HttpResponse(bio.read(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                response["Content-Disposition"] = "attachment; filename=all_attempts.xlsx"
-                return response
-
-            # PDF via ReportLab
-            buffer = io.BytesIO()
-            doc = SimpleDocTemplate(buffer, pagesize=A4)
-            elements = []
-            styles = getSampleStyleSheet()
-            elements.append(Paragraph("All Attempts Results", styles["Title"]))
-            elements.append(Spacer(1, 12))
-
-            table_data = [["Student", "Username", "Exam", "Score", "Started At", "Completed At"]]
-            for a in attempts_qs:
-                student_username = a.student.username if hasattr(a.student, "username") else str(a.student)
-                started = a.started_at.strftime("%d-%m-%Y %H:%M") if a.started_at else ""
-                submitted_at = a.submitted_at.strftime("%d-%m-%Y %H:%M") if getattr(a, "submitted_at", None) else ""
-                table_data.append([getattr(a.student, "get_full_name", student_username) or student_username, student_username, a.quiz.title, str(a.score), started, submitted_at])
-            tbl = Table(table_data, repeatRows=1)
-            tbl.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.gray),
-                                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                                    ("GRID", (0, 0), (-1, -1), 0.5, colors.black),]))
-            elements.append(tbl)
-            doc.build(elements)
-            buffer.seek(0)
-            ActionLog.objects.create(user=request.user, action_type="Downloaded all attempts (pdf)", model_name="StudentQuizAttempt", object_id="all", details={"count": attempts_qs.count()})
-            response = HttpResponse(buffer.getvalue(), content_type="application/pdf")
-            response["Content-Disposition"] = "attachment; filename=all_attempts.pdf"
-            return response
-
-        return JsonResponse({"error": "unknown action"}, status=400)
 
     # -----------------------
     # GET: return dashboard data JSON
@@ -375,6 +320,263 @@ def admin_dashboard_data(request):
         "quizzes_total_pages": paginator_quiz.num_pages,
     })
 
+
+@login_required
+@user_passes_test(is_teacher_or_admin)
+def admin_report_generator(request):
+    """
+    Display the report generator page where admin/teacher can choose class and date range.
+    """
+    classes = Class.objects.all()
+    return render(request, "exams/admin_report_generator.html", {"classes": classes})
+
+
+
+@login_required
+def admin_classes_report_pdf(request, class_id):
+    from .models import Class  
+    ClassModel = Class
+    class_obj = get_object_or_404(ClassModel, id=class_id)
+    students = User.objects.filter(role='student', student_class=class_obj)
+
+    response = HttpResponse(content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{class_obj.name}_report.pdf"'
+    buffer = BytesIO()
+
+    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=40, rightMargin=40, topMargin=40, bottomMargin=30)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    logo_path = os.path.join(settings.BASE_DIR, 'static', 'images', 'school_logo.png')
+    school_name = settings.SCHOOL_NAME if hasattr(settings, 'SCHOOL_NAME') else "My School"
+
+    for student in students:
+        # Header
+        try:
+            logo = Image(logo_path, width=1.2*inch, height=1.2*inch)
+        except Exception:
+            logo = Paragraph("", styles['Normal'])
+
+        # Student photo
+        if hasattr(student, 'profile_picture') and student.profile_picture:
+            try:
+                student_photo = Image(student.profile_picture.path, width=1.2*inch, height=1.2*inch)
+            except Exception:
+                student_photo = Paragraph("", styles['Normal'])
+        else:
+            student_photo = Paragraph("", styles['Normal'])
+
+        header_data = [
+            [logo, Paragraph(f"<b>{school_name}</b>", ParagraphStyle('centered', fontSize=16, alignment=1)), student_photo]
+        ]
+        header_table = Table(header_data, colWidths=[1.5*inch, 3.5*inch, 1.5*inch])
+        header_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('ALIGN', (1, 0), (1, 0), 'CENTER'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ]))
+        elements.append(header_table)
+        elements.append(Spacer(1, 12))
+
+        # Student info
+        total_students = students.count()
+        info_text = f"""
+        <b>Student Name:</b> {student.get_full_name() or student.username}<br/>
+        <b>Class:</b> {class_obj.name}<br/>
+        <b>Total Students in Class:</b> {total_students}
+        """
+        elements.append(Paragraph(info_text, styles['Normal']))
+        elements.append(Spacer(1, 12))
+
+        # Student attempts
+        attempts = StudentQuizAttempt.objects.filter(student=student).select_related('quiz__subject')
+
+        if attempts.exists():
+            subjects = [a.quiz.subject.name for a in attempts if a.quiz.subject]
+            scores = [a.score for a in attempts]
+
+            plt.figure(figsize=(5, 2))
+            plt.bar(subjects, scores)
+            plt.title("Performance by Subject")
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+
+            chart_buf = BytesIO()
+            plt.savefig(chart_buf, format='png')
+            plt.close()
+            chart_buf.seek(0)
+            chart_img = Image(chart_buf, width=5.5*inch, height=2.2*inch)
+            elements.append(chart_img)
+            elements.append(Spacer(1, 12))
+
+            # Table
+            data = [["Exam Title", "Subject", "Score", "Date"]]
+            for attempt in attempts:
+                data.append([
+                    attempt.quiz.title,
+                    attempt.quiz.subject.name if attempt.quiz.subject else "—",
+                    f"{attempt.score}",
+                    attempt.submitted_at.strftime("%Y-%m-%d %H:%M") if attempt.submitted_at else "—"
+                ])
+
+            table = Table(data, colWidths=[160, 120, 80, 100])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#003366")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ]))
+            elements.append(table)
+        else:
+            elements.append(Paragraph("<i>No Exam attempts yet.</i>", styles['Normal']))
+
+        # Add page break between students
+        elements.append(PageBreak())
+
+    doc.build(elements)
+    pdf = buffer.getvalue()
+    buffer.close()
+    response.write(pdf)
+    return response
+
+
+@login_required
+@user_passes_test(is_teacher_or_admin)
+def admin_class_report_pdf(request):
+    """
+    Generate report for selected class and date range.
+    """
+    class_id = request.GET.get("class_id")
+    start_date = request.GET.get("start_date")
+    end_date = request.GET.get("end_date")
+
+    if not class_id:
+        return HttpResponse("Class not selected.", status=400)
+
+    class_obj = get_object_or_404(Class, id=class_id)
+    students = User.objects.filter(role='student', student_class=class_obj)
+
+    # Date filtering (optional)
+    date_filter = {}
+    if start_date:
+        date_filter["submitted_at__gte"] = datetime.strptime(start_date, "%Y-%m-%d")
+    if end_date:
+        date_filter["submitted_at__lte"] = datetime.strptime(end_date, "%Y-%m-%d")
+
+    response = HttpResponse(content_type='application/pdf')
+    filename = f"{class_obj.name}_report_{timezone.now().strftime("%Y-%m-%d")}.pdf"
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=40, rightMargin=40, topMargin=40, bottomMargin=30)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    # School branding
+    logo_path = os.path.join(settings.BASE_DIR, 'static', 'images', 'school_logo.png')
+    school_name = settings.SCHOOL_NAME if hasattr(settings, 'SCHOOL_NAME') else "My School"
+
+    for student in students:
+        # Header
+        try:
+            logo = Image(logo_path, width=1.2 * inch, height=1.2 * inch)
+        except Exception:
+            logo = Paragraph("", styles['Normal'])
+
+        # Student photo
+        if hasattr(student, 'profile_picture') and student.profile_picture:
+            try:
+                student_photo = Image(student.profile_picture.path, width=1.2 * inch, height=1.2 * inch)
+            except Exception:
+                student_photo = Paragraph("", styles['Normal'])
+        else:
+            student_photo = Paragraph("", styles['Normal'])
+
+        header_data = [
+            [logo, Paragraph(f"<b>{school_name}</b>", ParagraphStyle('centered', fontSize=16, alignment=1)), student_photo]
+        ]
+        header_table = Table(header_data, colWidths=[1.5 * inch, 3.5 * inch, 1.5 * inch])
+        header_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('ALIGN', (1, 0), (1, 0), 'CENTER'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ]))
+        elements.append(header_table)
+        elements.append(Spacer(1, 12))
+
+        # Student info
+        total_students = students.count()
+        info_text = f"""
+        <b>Student Name:</b> {student.get_full_name() or student.username}<br/>
+        <b>Class:</b> {class_obj.name}<br/>
+        <b>Total Students in Class:</b> {total_students}
+        """
+        elements.append(Paragraph(info_text, styles['Normal']))
+        elements.append(Spacer(1, 12))
+
+        # Quiz attempts filtered by date
+        attempts = StudentQuizAttempt.objects.filter(student=student, **date_filter)
+
+        if attempts.exists():
+            subjects = [a.quiz.subject.name for a in attempts if a.quiz.subject]
+            scores = [a.score for a in attempts]
+
+            # Chart
+            plt.figure(figsize=(5, 2))
+            plt.bar(subjects, scores, color="steelblue")
+            plt.title("Performance by Subject")
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            chart_buf = BytesIO()
+            plt.savefig(chart_buf, format='png')
+            plt.close()
+            chart_buf.seek(0)
+            chart_img = Image(chart_buf, width=5.5 * inch, height=2.2 * inch)
+            elements.append(chart_img)
+            elements.append(Spacer(1, 12))
+
+            # Table
+            data = [["Exam Title", "Subject", "Score", "Date"]]
+            for attempt in attempts:
+                data.append([
+                    attempt.quiz.title,
+                    attempt.quiz.subject.name if attempt.quiz.subject else "—",
+                    f"{attempt.score}",
+                    attempt.submitted_at.strftime("%Y-%m-%d %H:%M") if attempt.submitted_at else "—"
+                ])
+            table = Table(data, colWidths=[160, 120, 80, 100])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#003366")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ]))
+            elements.append(table)
+        else:
+            elements.append(Paragraph("<i>No Exam attempts found for this period.</i>", styles['Normal']))
+
+        elements.append(PageBreak())
+
+    # Digital signature section
+    signature_text = f"""
+    <br/><br/><br/>
+    ____________________________ <br/>
+    <b>Class Teacher / Admin Signature</b><br/>
+    Generated on: {timezone.now().strftime("%d-%m-%Y %H:%M")}
+    """
+    elements.append(Paragraph(signature_text, styles['Normal']))
+
+    doc.build(elements)
+    pdf = buffer.getvalue()
+    buffer.close()
+    response.write(pdf)
+    return response
+
+
 # ----------------- TEACHER DASHBOARD -------------------
 
 
@@ -392,12 +594,8 @@ def is_teacher(user):
 def teacher_dashboard(request):
     """Render teacher dashboard page"""
     teacher = request.user
-    # attempts = StudentQuizAttempt.objects.all().order_by('-id')
-
-    # return render(request, "exams/teacher_dashboard.html", {
-    #     "attempts": attempts
-    # })
-
+    students_with_attempts = User.objects.filter(studentquizattempt__is_submitted=True, studentquizattempt__student__student_class=teacher.student_class).distinct()
+  
     pending_attempts = (
         StudentQuizAttempt.objects
         .filter(
@@ -410,9 +608,10 @@ def teacher_dashboard(request):
         .distinct()
         .order_by('-submitted_at')
     )
-
+ 
     return render(request, "exams/teacher_dashboard.html", {
-        "attempts": pending_attempts
+        "attempts": pending_attempts, 
+        "students_with_attempts": students_with_attempts
     })
 
 @login_required
@@ -542,7 +741,7 @@ def teacher_dashboard_data(request):
             "grade_num_pages": grade_page.paginator.num_pages,
         },
     }
-    print(data["performance"])
+   
     return JsonResponse(data)
 
 
@@ -594,7 +793,7 @@ def grading_list(request):
     attempt = {}
     for a in ungraded_answers:
         attempt.update({'id': a.attempt.id, 'quiz': a.attempt.quiz.id})
-    print(attempt)
+   
     return render(request, "exams/grading_list.html", {"answers": ungraded_answers, 'attempt': attempt})
 
 
@@ -673,109 +872,142 @@ def grade_attempt(request, attempt_id):
     })
 
 
+# ============================
+# Student Report PDF Generation
 
-# @login_required
-# @user_passes_test(is_teacher_or_admin)
-# def grade_quiz(request, quiz_id, student_id):
-#     if request.method == "POST":
-#         feedback = request.POST.get('feedback', '')
-#         total_score = 0
 
-#         # ✅ Grade all answers (objective + subjective)
-#         answers = Answer.objects.filter(
-#             attempt__student_id=student_id,
-#             attempt__quiz_id=quiz_id
-#         )
+@login_required
+def student_report_pdf(request, student_id):
+    student = get_object_or_404(User, id=student_id, role='student')
+    attempts = StudentQuizAttempt.objects.filter(student=student).select_related('quiz__subject')
 
-#         for ans in answers:
-#             if ans.question.question_type == "objective":
-#                 ans.score = 1 if ans.is_correct else 0
-#             else:  # subjective
-#                 ans.score = float(request.POST.get(f"score_{ans.id}", 0))
-#             ans.feedback = feedback
-#             ans.save()
-#             total_score += ans.score
+    # Prepare PDF response
+    response = HttpResponse(content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{student.username}_report.pdf"'
+    buffer = BytesIO()
 
-#         # ✅ Update StudentQuizAttempt total score
-#         attempt = StudentQuizAttempt.objects.filter(
-#             student_id=student_id,
-#             quiz_id=quiz_id
-#         ).first()
-#         if attempt:
-#             attempt.total_score = total_score
-#             attempt.graded = True
-#             attempt.save()
+    # PDF setup
+    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=40, rightMargin=40, topMargin=40, bottomMargin=30)
+    styles = getSampleStyleSheet()
+    elements = []
 
-#         return JsonResponse({"success": True, "message": "Grading saved successfully!"})
-    
+    # =============================
+    # HEADER SECTION (LOGO + TITLE + PHOTO)
+    # =============================
+    logo_path = os.path.join(settings.BASE_DIR, 'static', 'images', 'school_logo.png') 
+    school_name = settings.SCHOOL_NAME if hasattr(settings, 'SCHOOL_NAME') else "My School"
 
-# @login_required
-# @user_passes_test(is_teacher_or_admin)
-# def grade_quiz_attempt(request, quiz_id, attempt_id):
-#     quiz = get_object_or_404(Quiz, id=quiz_id)
-#     attempt = get_object_or_404(StudentQuizAttempt, id=attempt_id, quiz=quiz)
-#     print(quiz, attempt)
-#     # Fetch all answers
-#     answers = Answer.objects.filter(attempt=attempt).select_related("question")
+    # Try loading logo
+    try:
+        logo = Image(logo_path, width=1.2*inch, height=1.2*inch)
+    except Exception:
+        logo = Paragraph("", styles['Normal'])
 
-#     # Objective score (auto-calculated)
-#     objective_score = answers.filter(question__question_type="objective").aggregate(total=Sum("score"))["total"] or 0
+    # Try loading student photo (if exists)
+    if hasattr(student, 'profile_picture') and student.profile_picture:
+        photo_path = student.profile_picture.path
+        try:
+            student_photo = Image(photo_path, width=1.2*inch, height=1.2*inch)
+        except Exception:
+            student_photo = Paragraph("", styles['Normal'])
+    else:
+        student_photo = Paragraph("", styles['Normal'])
 
-#     # Subjective answers (require manual grading)
-#     subjective_answers = answers.filter(question__question_type="subjective")
+    # Header layout (logo, school name, student photo)
+    header_data = [
+        [logo, Paragraph(f"<b>{school_name}</b>", ParagraphStyle('centered', fontSize=16, alignment=1)), student_photo]
+    ]
+    header_table = Table(header_data, colWidths=[1.5*inch, 3.5*inch, 1.5*inch])
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN', (1, 0), (1, 0), 'CENTER'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+    ]))
+    elements.append(header_table)
+    elements.append(Spacer(1, 12))
 
-#     if request.method == "POST":
-#         # Update subjective scores
-#         total_subjective_score = 0
-#         for ans in subjective_answers:
-#             field_name = f"score_{ans.id}"
-#             new_score = request.POST.get(field_name)
-#             if new_score is not None:
-#                 try:
-#                     ans.score = float(new_score)
-#                     ans.save()
-#                     total_subjective_score += ans.score
-#                 except ValueError:
-#                     continue
+    # =============================
+    # STUDENT INFO SECTION
+    # =============================
+    total_students = User.objects.filter(role='student', student_class=student.student_class).count()
 
-#         # Compute total score (objective + subjective)
-#         total_score = objective_score + total_subjective_score
-#         attempt.total_score = total_score
-#         attempt.is_pending = False
-#         attempt.save()
+    info_text = f"""
+    <b>Student Name:</b> {student.get_full_name() or student.username}<br/>
+    <b>Class:</b> {student.student_class.name if hasattr(student, 'student_class') else 'N/A'}<br/>
+    <b>Total Students in Class:</b> {total_students}
+    """
+    elements.append(Paragraph(info_text, styles['Normal']))
+    elements.append(Spacer(1, 12))
 
-#         # Success feedback
-#         if request.headers.get("x-requested-with") == "XMLHttpRequest":
-#             return JsonResponse({"success": True, "message": "Grading saved successfully."})
+    # =============================
+    # PERFORMANCE CHART (MATPLOTLIB)
+    # =============================
+    if attempts.exists():
+        subjects = []
+        scores = []
 
-#         messages.success(request, "✅ Grading completed successfully!")
-#         return redirect("grade_quiz_attempt", quiz_id=quiz.id, attempt_id=attempt.id)
+        for attempt in attempts:
+            if attempt.quiz.subject:
+                subjects.append(attempt.quiz.subject.name)
+                scores.append(attempt.score or 0.0)
 
-#     context = {
-#         "quiz": quiz,
-#         "attempt": attempt,
-#         "objective_score": objective_score,
-#         "subjective_answers": subjective_answers,
-#     }
+        if subjects:
+            fig = Figure(figsize=(6, 2))
+            ax = fig.add_subplot(111)
+            ax.bar(subjects, scores, color='#2a9df4')
+            ax.set_title("Student Performance by Subject")
+            ax.set_xlabel("Subject")
+            ax.set_ylabel("Score")
+            ax.tick_params(axis='x', rotation=45)
+            fig.tight_layout()
 
-#     ActionLog(
-#         user = request.user,
-#         action_type = 'Grade',
-#         description = 'grading exam',
-#         created_at = timezone.now(),
-#         model_name = Answer,
-#         object_id = str(quiz.id),
-#         timestamp = timezone.now(),
-#         details = "Your exam has been graded"
-#     )
+            canvas = FigureCanvas(fig)
+            chart_buffer = BytesIO()
+            canvas.print_png(chart_buffer)
+            chart_buffer.seek(0)
 
-#     Notification(
-#         sender = request.user,
-#         recipient = get_object_or_404(User, id=attempt_id, role="student"),
-#         message=f"Your exam has been graded: {quiz.title}",
-#         created_at = timezone.now()
-#     )
-#     return render(request, "exams/grade_quiz_attempt.html", context)
+            chart_image = Image(chart_buffer, width=5.5*inch, height=4.5*inch)
+            elements.append(chart_image)
+            elements.append(Spacer(1, 20))
+
+    # =============================
+    # QUIZ ATTEMPT TABLE
+    # =============================
+    elements.append(Paragraph("<b>Exam Attempt Details</b>", styles['Heading3']))
+    elements.append(Spacer(1, 8))
+
+    if not attempts.exists():
+        elements.append(Paragraph("No Exam attempts yet.", styles['Normal']))
+    else:
+        data = [["Exam Title", "Subject", "Score", "Date Taken"]]
+        for attempt in attempts:
+            data.append([
+                attempt.quiz.title,
+                attempt.quiz.subject.name if attempt.quiz.subject else "—",
+                f"{attempt.score}",
+                attempt.submitted_at.strftime("%d-%m-%Y %H:%M") if attempt.submitted_at else "—"
+            ])
+
+        table = Table(data, colWidths=[160, 120, 80, 100])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#003366")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ]))
+        elements.append(table)
+
+    # =============================
+    # BUILD DOCUMENT
+    # =============================
+    doc.build(elements)
+    pdf = buffer.getvalue()
+    buffer.close()
+    response.write(pdf)
+    return response
 
 
 
@@ -851,7 +1083,6 @@ def broadcast_message(request):
 
         return JsonResponse({"success": True, "message": "Broadcast sent successfully!"})
     return JsonResponse({"error": "Invalid request method."}, status=400)
-
 
 # ----------------- MARK NOTIFICATION READ -------------------
 @login_required

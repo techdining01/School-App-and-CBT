@@ -32,6 +32,9 @@ urlpatterns = [
     path("admin/quizzes/upload-excel/", views.upload_quiz_excel, name="upload_quiz_excel"),
     path("admin/retake-requests/", views.retake_requests_list, name="retake_requests_list"),
     path("admin/retake-request/<int:request_id>/", views.handle_retake_request, name="handle_retake_request"),
+    path('admin/class/<int:class_id>/report/', views.admin_classes_report_pdf, name='admin_classes_report_pdf'),
+    path('reports/', views.admin_report_generator, name='admin_report_generator'),
+    path('reports/class/pdf/', views.admin_class_report_pdf, name='admin_class_report_pdf'),
 
     # Admin dashboard and retake requests from students
     path("admin/dashboard/", views.admin_dashboard, name="admin_dashboard"),
@@ -60,6 +63,7 @@ urlpatterns = [
     path("teacher/student/<int:student_id>/review/", views.student_review, name="student_review"),
     path("teacher/broadcast/", views.broadcast_message, name="broadcast_message"),
     path("teacher/download/student/<int:student_id>/", views.download_student_report, name="download_student_report"),
+    path('teacher/student/<int:student_id>/report/', views.student_report_pdf, name='student_report_pdf'),
     path("teacher/download/quiz/<int:quiz_id>/", views.download_quiz_report, name="download_quiz_report"),
     path("teacher/broadcast/", views.broadcast_message, name="teacher_broadcast"),
     path("notifications/mark-read/<int:notification_id>/", views.mark_notification_read, name="mark_notification_read"),
