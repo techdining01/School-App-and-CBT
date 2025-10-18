@@ -124,8 +124,9 @@ def is_admin(user):
 @user_passes_test(is_admin)
 def admin_dashboard(request):
     classes = Class.objects.all()
-    
-    return render(request, "exams/admin_dashboard.html", {'classes': classes})
+    student_per_class = User.objects.filter(role__in = ('teacher', 'admin')).count()
+      
+    return render(request, "exams/admin_dashboard.html", {'classes': classes, 'student_per_class': student_per_class})
 
 
 # Admin dashboard data endpoint (GET -> fetch data; POST -> perform actions such as approve/reject/broadcast/download)
@@ -591,11 +592,24 @@ def is_teacher(user):
 
 @login_required
 @user_passes_test(is_teacher_or_admin)
+# ...existing code...
 def teacher_dashboard(request):
     """Render teacher dashboard page"""
     teacher = request.user
-    students_with_attempts = User.objects.filter(studentquizattempt__is_submitted=True, studentquizattempt__student__student_class=teacher.student_class).distinct()
-  
+
+    # students that have at least one submitted attempt in this teacher's class
+    students_with_attempts_qs = User.objects.filter(
+        studentquizattempt__is_submitted=True,
+        studentquizattempt__student__student_class=teacher.student_class,
+        role="student"
+    ).distinct().order_by('last_name', 'first_name', 'username')
+
+    # paginate students list for download/report links on dashboard
+    students_page_num = int(request.GET.get("students_with_att_page", 1) or 1)
+    students_per_page = 7  
+    students_with_att_page = Paginator(students_with_attempts_qs, students_per_page).get_page(students_page_num)
+
+    # pending subjective attempts for grading (existing behavior)
     pending_attempts = (
         StudentQuizAttempt.objects
         .filter(
@@ -608,11 +622,16 @@ def teacher_dashboard(request):
         .distinct()
         .order_by('-submitted_at')
     )
- 
+
     return render(request, "exams/teacher_dashboard.html", {
-        "attempts": pending_attempts, 
-        "students_with_attempts": students_with_attempts
+        "attempts": pending_attempts,
+        # keep both full queryset and paginated page (template can use page object)
+        "students_with_attempts": students_with_attempts_qs,
+        "students_with_att_page": students_with_att_page,
+        "students_with_att_num": students_page_num,
+        "students_with_att_num_pages": students_with_att_page.paginator.num_pages,
     })
+
 
 @login_required
 @user_passes_test(is_teacher_or_admin)
@@ -632,9 +651,10 @@ def teacher_dashboard_data(request):
     ).select_related('quiz', 'student').order_by('-submitted_at')
     
     # Quizzes
-    quizzes = Quiz.objects.filter(school_class=student_class).annotate(
+    quizzes = Quiz.objects.filter(created_by=teacher).annotate(
         attempt_count=Count("studentquizattempt")
     ).order_by("-created_at")
+
     quiz_page = Paginator(quizzes, 7).get_page(quiz_page_num)
 
     # Broadcasts
@@ -649,15 +669,7 @@ def teacher_dashboard_data(request):
     teacher = request.user
 
     # Show pending attempts initially (attempts that have at least one pending subjective answer)
-    pending_attempts = (
-        StudentQuizAttempt.objects
-        .filter(
-            quiz__created_by=teacher,
-            is_submitted=True
-        )
-        .select_related('quiz', 'student')
-        .order_by('-submitted_at')
-    )
+    pending_attempts = StudentQuizAttempt.objects.filter(quiz__created_by=teacher,is_submitted=True).select_related('quiz', 'student').distinct().order_by('-submitted_at')
     
     grade_page = Paginator(pending_attempts, 5).get_page(grade_page_num)
     
@@ -679,7 +691,7 @@ def teacher_dashboard_data(request):
             "my_quizzes": Quiz.objects.filter(created_by=teacher).count(),
             "my_class_quizzes": Quiz.objects.filter(created_by=teacher, school_class=student_class).count(),
             "objectives": Question.objects.filter(quiz__school_class=student_class, question_type="objective").count(),
-            "pended": StudentQuizAttempt.objects.filter(quiz__created_by=teacher, is_submitted=True).select_related('quiz', 'student').order_by('-id').count(),
+            "pended":StudentQuizAttempt.objects.filter(quiz__created_by=teacher, is_submitted=True, answers__is_pending=True,answers__question__question_type='subjective').select_related('quiz', 'student').distinct().order_by('-submitted_at').count(),
             "graded": Answer.objects.filter(question__quiz__created_by=teacher, is_pending=False).count(),
             "attempts_total": StudentQuizAttempt.objects.filter(student__student_class=student_class).count(),
             "total_students": User.objects.filter(student_class=student_class, role="student").count(),

@@ -141,7 +141,7 @@
               {% for cls in classes %}
               <tr>
                 <td>{{ cls.name }}</td>
-                <td>{{ cls.students.count }}</td>
+                <td>{{ cls.student_class.count }}</td>
                 <td>
                   <a href="{% url 'admin_classes_report_pdf' cls.id %}" class="btn btn-sm btn-success">
                     <i class="bi bi-file-earmark-pdf"></i> Generate Report
@@ -158,11 +158,6 @@
           <small class="text-muted">Generates PDF reports of student performances per class.</small>
           <a href="{% url 'admin_report_generator' %}" class="btn btn-warning btn-sm mb-2 p-2 fw-semi-bold w-100">Download Advance Report (PDF)</a>
         </div> 
-        <div class="card-footer d-flex justify-content-between align-item-center">
-          <button class="btn btn-sm btn-outline-secondary">Prev</button>
-          <small class="text-muted" id="report-pager"></small>
-          <button class="btn btn-sm btn-outline-secondary">Next</button>
-        </div>
       </div>
 
       <!-- User & Quiz Management -->
